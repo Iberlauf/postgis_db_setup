@@ -2,33 +2,38 @@
 
 from __future__ import annotations
 
-import datetime
+from datetime import date  # noqa: TC003
 
 from geoalchemy2 import Geometry
-from pydantic import ConfigDict, EmailStr, PositiveFloat
-from sqlalchemy import Computed, Engine
+from geoalchemy2.functions import (
+    ST_X,
+    ST_Y,
+)
+from pydantic import EmailStr, NonNegativeFloat  # noqa: TC002
+from sqlalchemy import Column, Computed, Connection, Engine
 from sqlmodel import (
     CheckConstraint,
-    Column,
+    Date,
     Field,
     Numeric,
-    Relationship,
+    Relationship,  # noqa: F401
     SQLModel,
     String,
+    text,
 )
+from sqlmodel._compat import SQLModelConfig  # noqa: TC002
+
+from sql_statements import create_z_trigger, create_z_trigger_function, insert_epsg_3855
 
 
 class Ekipa(SQLModel, table=True):
     """Tabela članova ekipe."""
 
-    model_config: ConfigDict = ConfigDict(
-        arbitrary_types_allowed=True,
-        from_attributes=True,
-    )
-    __tablename__: str = "ekipa"
-    __table_args__: dict[str, str] = {
-        "schema": "public",
+    model_config: SQLModelConfig = {
+        "arbitrary_types_allowed": True,
+        "from_attributes": True,
     }
+    __tablename__: str = "ekipa"
 
     ekipa_id: int | None = Field(
         default=None,
@@ -39,26 +44,21 @@ class Ekipa(SQLModel, table=True):
     ekipa_ime: str = Field(
         description="Ime člana ekipe.",
         max_length=255,
-        unique=True,
-        nullable=False,
         index=True,
     )
 
     ekipa_prezime: str = Field(
         description="prezime člana ekipe.",
         max_length=255,
-        unique=True,
-        nullable=False,
         index=True,
     )
 
     ekipa_full_name: str | None = Field(
         default=None,
-        description="Puno ime i prezime člana ekipe",
+        description="Puno ime i prezime člana ekipe.",
         max_length=255,
         sa_column=(
             Column(
-                "ekipa_full_name",
                 String(length=255),
                 Computed(sqltext="ekipa_ime || '_' || ekipa_prezime"),
             )
@@ -69,15 +69,12 @@ class Ekipa(SQLModel, table=True):
 class Investitor(SQLModel, table=True):
     """Tabela investitora."""
 
-    model_config: ConfigDict = ConfigDict(
-        arbitrary_types_allowed=True,
-        from_attributes=True,
-    )
+    model_config: SQLModelConfig = {
+        "arbitrary_types_allowed": True,
+        "from_attributes": True,
+    }
 
     __tablename__: str = "investitori"
-    __table_args__: dict[str, str] = {
-        "schema": "public",
-    }
 
     investitor_id: int | None = Field(
         default=None,
@@ -89,7 +86,6 @@ class Investitor(SQLModel, table=True):
         description="Naziv investitora.",
         max_length=255,
         unique=True,
-        nullable=False,
         index=True,
     )
     investitor_adresa: str | None = Field(
@@ -101,31 +97,28 @@ class Investitor(SQLModel, table=True):
         default=None,
         description="Email adresa investitora.",
         max_length=255,
-        unique_items=True,
+        unique=True,
     )
 
-    projekti: list[Projekat] = Relationship(back_populates="investitor")
+    # projekti: list[Projekat] = Relationship(back_populates="investitor")  # noqa: E501, ERA001
 
 
 class Projekat(SQLModel, table=True):
     """Tabela projekata."""
 
-    model_config: ConfigDict = ConfigDict(
-        arbitrary_types_allowed=True,
-        from_attributes=True,
-    )
+    model_config: SQLModelConfig = {
+        "arbitrary_types_allowed": True,
+        "from_attributes": True,
+    }
 
     __tablename__: str = "projekti"
-    __table_args__: tuple[CheckConstraint, dict[str, str]] = (
+    __table_args__: tuple[CheckConstraint] = (
         CheckConstraint(
             sqltext="projekat_start_datum IS NULL "
             "OR projekat_kraj_datum IS NULL "
             "OR projekat_start_datum <= projekat_kraj_datum",
             name="ck_projekat_datum_opseg",
         ),
-        {
-            "schema": "public",
-        },
     )
 
     projekat_id: int | None = Field(
@@ -138,69 +131,61 @@ class Projekat(SQLModel, table=True):
         description="Naziv projekta.",
         max_length=255,
         unique=True,
-        nullable=False,
         index=True,
     )
 
     broj_ugovora: str = Field(
         description="Broj ugovora.",
         max_length=255,
-        nullable=False,
     )
 
-    projekat_start_datum: datetime.date | None = Field(
+    projekat_start_datum: date | None = Field(
         default=None,
         description="Datum početka projekta.",
-        nullable=True,
     )
 
-    projekat_kraj_datum: datetime.date | None = Field(
+    projekat_kraj_datum: date | None = Field(
         default=None,
         description="Datum završetka projekta.",
-        nullable=True,
     )
 
-    pov_mag: PositiveFloat | None = Field(
+    pov_mag: NonNegativeFloat | None = Field(
         default=None,
         description="Ugovorena površina za geomagnetsko snimanje",
-        nullable=True,
     )
 
-    pov_gpr: PositiveFloat | None = Field(
+    pov_gpr: NonNegativeFloat | None = Field(
         default=None,
         description="Ugovorena površina za georadarsko snimanje",
-        nullable=True,
     )
 
-    investitor_id: int | None = Field(
-        default=None,
-        description="ID investitora.",
-        foreign_key="public.investitori.investitor_id",
-        index=True,
-    )
+    # investitor_id: int | None = Field(
+    #     default=None,  # noqa: ERA001
+    #     description="ID investitora.",  # noqa: ERA001
+    #     foreign_key="public.investitori.investitor_id",  # noqa: ERA001
+    #     index=True,  # noqa: ERA001
+    # )  # noqa: ERA001, RUF100
 
-    investitor: Investitor | None = Relationship(
-        back_populates="projekti",
-    )
+    # investitor: Investitor | None = Relationship(
+    #     back_populates="projekti",  # noqa: ERA001
+    # )  # noqa: ERA001, RUF100
 
 
 class ProjectSettings(SQLModel):
     """Podešavanja za projekat."""
 
     __tablename__: str = "podesavanja"
-    __table_args__: dict[str, str] = {"schema": "public"}
 
 
 class Tacke(SQLModel, table=True):
     """Tabela tačaka."""
 
-    model_config: ConfigDict = ConfigDict(
-        arbitrary_types_allowed=True,
-        from_attributes=True,
-    )
+    model_config: SQLModelConfig = {
+        "arbitrary_types_allowed": True,
+        "from_attributes": True,
+    }
 
     __tablename__: str = "tacke"
-    __table_args__: dict[str, str] = {"schema": "public"}
 
     tacka_id: int | None = Field(
         default=None,
@@ -210,36 +195,50 @@ class Tacke(SQLModel, table=True):
     tacka_ime: str = Field(
         description="Naziv tačke.",
         max_length=255,
-        nullable=False,
         index=True,
     )
-    datum: datetime.date = Field(
-        default_factory=datetime.date.today,
+    datum: date | None = Field(
+        default=None,
         description="Datum kotiranja.",
+        sa_column=Column(type_=Date, server_default=text(text="CURRENT_DATE")),
     )
-    x: float | None = Field(
+
+    x: NonNegativeFloat | None = Field(
         default=None,
         description="X koordinata",
-        sa_column=Column(type_=Numeric(precision=10, scale=3), nullable=True),
+        sa_column=Column(
+            Computed(sqltext=ST_X(text(text="geometry")), persisted=True),
+            type_=Numeric(precision=10, scale=3, asdecimal=False),
+            nullable=True,
+        ),
     )
-    y: float | None = Field(
+    y: NonNegativeFloat | None = Field(
         default=None,
         description="Y koordinata",
-        sa_column=Column(type_=Numeric(precision=10, scale=3), nullable=True),
+        sa_column=Column(
+            Computed(sqltext=ST_Y(text(text="geometry")), persisted=True),
+            type_=Numeric(precision=10, scale=3, asdecimal=False),
+            nullable=True,
+        ),
     )
+
     z: float | None = Field(
         default=None,
         description="Nadmorska visina.",
-        sa_column=Column(type_=Numeric(precision=10, scale=3), nullable=True),
+        sa_column=Column(
+            type_=Numeric(precision=10, scale=3, asdecimal=False),
+            nullable=True,
+        ),
     )
-    geometry: Geometry | None = Field(
+
+    geometry: Geometry = Field(
         default=None,
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(
                 geometry_type="POINT",
                 srid=6316,
-                dimension=3,
+                dimension=2,
                 spatial_index=True,
                 nullable=True,
             ),
@@ -249,4 +248,14 @@ class Tacke(SQLModel, table=True):
 
 def create_db_and_tables(engine: Engine) -> None:
     """Create db and tables."""
-    SQLModel.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        if isinstance(conn, Connection):
+            conn.execute(statement=insert_epsg_3855)
+            SQLModel.metadata.create_all(bind=conn)
+
+            conn.execute(statement=create_z_trigger_function)
+            conn.execute(statement=create_z_trigger)
+
+
+if __name__ == "__main__":
+    ...

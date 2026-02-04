@@ -4,15 +4,21 @@ from pydantic import Field, NonNegativeInt
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class DbSettings(BaseSettings):
+class Settings(BaseSettings):
+    """Settings default."""
+
+
+class DbSettings(Settings):
     """Settings."""
 
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
     postgis_db_name: str
+    postgis_db_user: str
     postgis_db_pass: str
     postgis_db_host: str = Field(
         default="localhost",
@@ -23,7 +29,9 @@ class DbSettings(BaseSettings):
         description="Port number.",
         le=65535,
     )
-    postgis_db_schema: str
 
 
 settings: DbSettings = DbSettings()  # type: ignore  # noqa: PGH003
+
+if __name__ == "__main__":
+    ...
