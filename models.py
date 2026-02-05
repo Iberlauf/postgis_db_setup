@@ -23,7 +23,12 @@ from sqlmodel import (
 )
 from sqlmodel._compat import SQLModelConfig  # noqa: TC002
 
-from sql_statements import create_z_trigger, create_z_trigger_function, insert_epsg_3855
+from sql_statements import (
+    create_z_trigger,
+    create_z_trigger_function,
+    insert_epsg_3855,
+    sql_statements,
+)
 
 
 class Ekipa(SQLModel, table=True):
@@ -60,7 +65,11 @@ class Ekipa(SQLModel, table=True):
         sa_column=(
             Column(
                 String(length=255),
-                Computed(sqltext="ekipa_ime || '_' || ekipa_prezime"),
+                Computed(
+                    sqltext="""--sql
+                         ekipa_ime || '_' || ekipa_prezime
+                         """,
+                ),
             )
         ),
     )
@@ -114,9 +123,10 @@ class Projekat(SQLModel, table=True):
     __tablename__: str = "projekti"
     __table_args__: tuple[CheckConstraint] = (
         CheckConstraint(
-            sqltext="projekat_start_datum IS NULL "
-            "OR projekat_kraj_datum IS NULL "
-            "OR projekat_start_datum <= projekat_kraj_datum",
+            sqltext="""--sql
+            projekat_start_datum IS NULL
+            OR projekat_kraj_datum IS NULL
+            OR projekat_start_datum <= projekat_kraj_datum""",
             name="ck_projekat_datum_opseg",
         ),
     )
@@ -200,7 +210,14 @@ class Tacke(SQLModel, table=True):
     datum: date | None = Field(
         default=None,
         description="Datum kotiranja.",
-        sa_column=Column(type_=Date, server_default=text(text="CURRENT_DATE")),
+        sa_column=Column(
+            type_=Date,
+            server_default=text(
+                text="""--sql
+                    CURRENT_DATE
+                    """,
+            ),
+        ),
     )
 
     x: NonNegativeFloat | None = Field(
@@ -250,11 +267,14 @@ def create_db_and_tables(engine: Engine) -> None:
     """Create db and tables."""
     with engine.begin() as conn:
         if isinstance(conn, Connection):
+            for statement in sql_statements:
+                conn.execute(statement=statement)
             conn.execute(statement=insert_epsg_3855)
             SQLModel.metadata.create_all(bind=conn)
 
             conn.execute(statement=create_z_trigger_function)
             conn.execute(statement=create_z_trigger)
+            conn.commit()
 
 
 if __name__ == "__main__":
