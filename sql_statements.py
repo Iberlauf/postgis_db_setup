@@ -120,5 +120,6 @@ DROP TRIGGER IF EXISTS trg_update_tacka_z ON tacke;
 DROP FUNCTION IF EXISTS update_tacka_z();
 """)
 
+
 if __name__ == "__main__":
     ...
