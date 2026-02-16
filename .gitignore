@@ -13,3 +13,4 @@ downloads/
 venv/
 
 out_db_raster.txt
+default_values.py
