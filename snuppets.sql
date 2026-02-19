@@ -1,0 +1,7 @@
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE EXTENSION IF NOT EXISTS postgis_raster;
+
+SELECT postgis_extensions_upgrade();
+
+CREATE EXTENSION IF NOT EXISTS hstore;

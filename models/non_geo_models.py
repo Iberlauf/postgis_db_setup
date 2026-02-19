@@ -16,14 +16,13 @@ from sqlmodel import (
     CheckConstraint,
     Column,
     Computed,
-    Date,
     Field,
+    ForeignKey,
     Integer,
     Numeric,
     SQLModel,
     String,
     UniqueConstraint,
-    func,
     text,
 )
 from sqlmodel._compat import SQLModelConfig  # noqa: TC002
@@ -82,6 +81,146 @@ class Ekipa(SQLModel, table=True):
                 unique=True,
                 index=True,
             )
+        ),
+    )
+
+
+class PoljaMagEkipa(SQLModel, table=True):
+    """Many-to-many veza između PoljaMag i Ekipa."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "polja_mag_ekipa"
+
+    polje_id: int = Field(
+        default=None,
+        description="Primary key tabele polja_mag.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="polja_mag.polje_id",
+                onupdate="CASCADE",
+                ondelete="CASCADE",
+            ),
+            primary_key=True,
+        ),
+    )
+
+    ekipa_id: int = Field(
+        default=None,
+        description="Primary key tabele ekipa.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="ekipa.ekipa_id",
+                onupdate="CASCADE",
+                ondelete="RESTRICT",
+            ),
+            primary_key=True,
+        ),
+    )
+
+
+class ProfilMagEkipa(SQLModel, table=True):
+    """Many-to-many veza između ProfilMag i Ekipa."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "profil_mag_ekipa"
+
+    polje_id: int = Field(
+        default=None,
+        description="Primary key tabele profili_mag.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="profili_mag.profil_id",
+                onupdate="CASCADE",
+                ondelete="CASCADE",
+            ),
+            primary_key=True,
+        ),
+    )
+
+    ekipa_id: int = Field(
+        default=None,
+        description="Primary key tabele ekipa.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="ekipa.ekipa_id",
+                onupdate="CASCADE",
+                ondelete="RESTRICT",
+            ),
+            primary_key=True,
+        ),
+    )
+
+
+class PoljaGprEkipa(SQLModel, table=True):
+    """Many-to-many veza između PoljaGpr i Ekipa."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "polja_gpr_ekipa"
+
+    polje_id: int | None = Field(
+        default=None,
+        description="Primary key tabele polja_gpr.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="polja_gpr.polje_id",
+                onupdate="CASCADE",
+                ondelete="CASCADE",
+            ),
+            primary_key=True,
+        ),
+    )
+
+    ekipa_id: int | None = Field(
+        default=None,
+        description="Primary key tabele ekipa.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="ekipa.ekipa_id",
+                onupdate="CASCADE",
+                ondelete="RESTRICT",
+            ),
+            primary_key=True,
+        ),
+    )
+
+
+class ProfilGprEkipa(SQLModel, table=True):
+    """Many-to-many veza između ProfilGpr i Ekipa."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "profil_gpr_ekipa"
+
+    polje_id: int = Field(
+        default=None,
+        description="Primary key tabele profili_gpr.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="profili_gpr.profil_id",
+                onupdate="CASCADE",
+                ondelete="CASCADE",
+            ),
+            primary_key=True,
+        ),
+    )
+
+    ekipa_id: int = Field(
+        default=None,
+        description="Primary key tabele ekipa.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="ekipa.ekipa_id",
+                onupdate="CASCADE",
+                ondelete="RESTRICT",
+            ),
+            primary_key=True,
         ),
     )
 
@@ -183,17 +322,14 @@ class Projekat(SQLModel, table=True):
         description="Ugovorena površina za geomagnetsko snimanje",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
-            nullable=True,
         ),
     )
 
     total_pov_mag: NonNegativeFloat | None = Field(
-        default=0.0,
+        default=None,
         description="Ukupna snimljena površina za geomagnetsko snimanje",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
-            nullable=True,
-            server_default=text(text="0.0"),
         ),
     )
 
@@ -202,17 +338,14 @@ class Projekat(SQLModel, table=True):
         description="Ugovorena površina za georadarsko snimanje",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
-            nullable=True,
         ),
     )
 
     total_pov_gpr: NonNegativeFloat | None = Field(
-        default=0.0,
+        default=None,
         description="Ukupna snimljena površina za georadarsko snimanje",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
-            nullable=True,
-            server_default=text(text="0.0"),
         ),
     )
 
@@ -221,6 +354,41 @@ class Projekat(SQLModel, table=True):
         description="ID investitora.",
         foreign_key="investitori.investitor_id",
         index=True,
+    )
+
+
+class ProjekatEkipa(SQLModel, table=True):
+    """Many-to-many veza između Projekat i Ekipa."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "projekat_ekipa"
+
+    projekat_id: int | None = Field(
+        default=None,
+        description="Primary key tabele polja_gpr.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="projekti.projekat_id",
+                onupdate="CASCADE",
+                ondelete="CASCADE",
+            ),
+            primary_key=True,
+        ),
+    )
+
+    ekipa_id: int | None = Field(
+        default=None,
+        description="Primary key tabele ekipa.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(
+                column="ekipa.ekipa_id",
+                onupdate="CASCADE",
+                ondelete="RESTRICT",
+            ),
+            primary_key=True,
+        ),
     )
 
 
@@ -262,12 +430,14 @@ class Podesavanje(SQLModel, table=True):
         primary_key=True,
     )
 
-    projekat_id: int | None = Field(
-        default=None,
+    projekat_id: int = Field(
         description="ID projekta.",
-        foreign_key="projekti.projekat_id",
-        unique=True,
-        index=True,
+        sa_column=Column(
+            Integer,
+            ForeignKey(column="projekti.projekat_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
     )
 
     color_ramp: str | None = Field(
@@ -376,8 +546,7 @@ class Magnetometar(SQLModel, table=True):
         max_length=255,
     )
 
-    mag_proizvodjac_id: int | None = Field(
-        default=None,
+    mag_proizvodjac_id: int = Field(
         description="ID proizvođača magnetometra.",
         foreign_key="proizvodjaci.proizvodjac_id",
         index=True,
@@ -403,7 +572,8 @@ class GeoRadar(SQLModel, table=True):
         index=True,
     )
 
-    gpr_serijski_broj: str = Field(
+    gpr_serijski_broj: str | None = Field(
+        default=None,
         description="Serijski broj georadara.",
         unique=True,
     )
@@ -440,7 +610,8 @@ class Antena(SQLModel, table=True):
         unique=True,
         index=True,
     )
-    antena_serijski_broj: str = Field(
+    antena_serijski_broj: str | None = Field(
+        default=None,
         description="Serijski broj antene georadara.",
         unique=True,
     )
@@ -478,19 +649,18 @@ class PovrsinaPoDatumu(SQLModel, table=True):
     )
 
     datum: date | None = Field(
+        default=None,
         description="Datum snimanja.",
-        sa_column=Column(
-            type_=Date,
-            server_default=func.current_date(),
-            nullable=True,
-        ),
     )
 
-    projekat_id: int | None = Field(
-        default=None,
+    projekat_id: int = Field(
         description="ID projekta.",
-        foreign_key="projekti.projekat_id",
-        index=True,
+        sa_column=Column(
+            Integer,
+            ForeignKey(column="projekti.projekat_id", ondelete="CASCADE"),
+            nullable=False,
+            index=True,
+        ),
     )
 
     pov_mag: NonNegativeFloat | None = Field(
@@ -498,7 +668,6 @@ class PovrsinaPoDatumu(SQLModel, table=True):
         description="Površina snimljena magnetometrom.",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
-            nullable=True,
         ),
     )
 
@@ -507,6 +676,25 @@ class PovrsinaPoDatumu(SQLModel, table=True):
         description="Površina snimljena georadarom.",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
-            nullable=True,
         ),
+    )
+
+
+class Nula(SQLModel, table=True):
+    """Tabela normalizovanih koordinata vertikala pravougaonika."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "nule"
+
+    nule_id: int | None = Field(
+        default=None,
+        description="ID vertikala.",
+        primary_key=True,
+    )
+
+    nule_naziv: str = Field(
+        description="Nula - početak snimanja.",
+        max_length=5,
+        unique=True,
+        index=True,
     )

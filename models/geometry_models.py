@@ -13,12 +13,12 @@ from geoalchemy2.functions import (
     ST_MakeValid,
     ST_UnaryUnion,
 )
-from pydantic import NonNegativeFloat, PositiveInt  # noqa: TC002
+from pydantic import NonNegativeFloat, PositiveFloat, PositiveInt  # noqa: TC002
 from sqlalchemy import Column, Computed, func
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlmodel import (
     CheckConstraint,
-    Date,
+    Double,
     Enum,
     Field,
     Index,
@@ -32,12 +32,13 @@ from sqlmodel import (
 from sqlmodel._compat import SQLModelConfig  # noqa: TC002
 
 from models.constraints import (
-    check_rectangular_polygon,
     ck_all_positive,
     ck_file_name_format_gpr,
-    ck_file_name_format_mag,
+    ck_linestring_two_points,
     ck_polje_naziv_format,
     ck_profil_naziv_format,
+    ck_rectangular_polygon,
+    ck_right_angles,
     ck_shift_x_non_negative,
     ck_shift_y_non_negative,
     uq_projekat_polje_concat_gpr,
@@ -45,7 +46,9 @@ from models.constraints import (
     uq_projekat_profil_concat_gpr,
     uq_projekat_profil_concat_mag,
 )
-from models.enums import NacinSnimanjaEnum, NulaEnum
+from models.enums import (
+    NacinSnimanjaEnum,
+)
 
 default_model_config: SQLModelConfig = {
     "arbitrary_types_allowed": True,
@@ -70,20 +73,19 @@ class Tacke(SQLModel, table=True):
         max_length=255,
         index=True,
     )
-    tacka_datum: date | None = Field(
+    datum: date | None = Field(
+        default=None,
         description="Datum kotiranja.",
-        sa_column=Column(
-            type_=Date,
-            server_default=func.current_date(),
-            nullable=True,
-        ),
     )
 
     x: NonNegativeFloat | None = Field(
         default=None,
         description="X koordinata",
         sa_column=Column(
-            Computed(sqltext=ST_X(literal_column(text="geometry")), persisted=True),
+            Computed(
+                sqltext=ST_X(ST_MakeValid(literal_column(text="geom"))),
+                persisted=True,
+            ),
             type_=Numeric(precision=10, scale=3, asdecimal=False),
             nullable=True,
         ),
@@ -92,7 +94,10 @@ class Tacke(SQLModel, table=True):
         default=None,
         description="Y koordinata",
         sa_column=Column(
-            Computed(sqltext=ST_Y(literal_column(text="geometry")), persisted=True),
+            Computed(
+                sqltext=ST_Y(ST_MakeValid(literal_column(text="geom"))),
+                persisted=True,
+            ),
             type_=Numeric(precision=10, scale=3, asdecimal=False),
             nullable=True,
         ),
@@ -107,7 +112,7 @@ class Tacke(SQLModel, table=True):
         ),
     )
 
-    geometry: Geometry = Field(
+    geom: Geometry = Field(
         default=None,
         description="Geometrijska kolona.",
         sa_column=Column(
@@ -138,11 +143,11 @@ class PoljaMag(SQLModel, table=True):
     ] = (
         uq_projekat_polje_concat_mag,
         ck_polje_naziv_format,
-        ck_file_name_format_mag,
         ck_shift_x_non_negative,
         ck_shift_y_non_negative,
         ck_all_positive,
-        check_rectangular_polygon,
+        ck_rectangular_polygon,
+        ck_right_angles,
     )
 
     polje_id: int | None = Field(
@@ -158,18 +163,14 @@ class PoljaMag(SQLModel, table=True):
     )
 
     datum: date | None = Field(
+        default=None,
         description="Datum snimanja.",
-        sa_column=Column(
-            type_=Date,
-            server_default=func.current_date(),
-            nullable=True,
-        ),
     )
 
-    file_name: str | None = Field(
+    snimak_broj: PositiveInt | None = Field(
         default=None,
-        description="Naziv fajla.",
-        max_length=255,
+        description="Broj snimka.",
+        le=99,
     )
 
     broj_polja: PositiveInt | None = Field(
@@ -190,33 +191,24 @@ class PoljaMag(SQLModel, table=True):
         ),
     )
 
-    projekat_id: int | None = Field(
-        default=None,
+    projekat_id: int = Field(
         description="ID projekta.",
         foreign_key="projekti.projekat_id",
-        index=True,
+        nullable=False,
     )
 
-    mag_id: int | None = Field(
-        default=None,
+    mag_id: int = Field(
         description="ID magnetometra.",
+        ge=1,
         foreign_key="magnetometri.mag_id",
         index=True,
     )
 
-    nule: str | None = Field(
-        default=None,
+    nule_id: int = Field(
         description="Početak snimanja.",
-        max_length=5,
-        sa_column=Column(
-            type_=NulaEnum,
-        ),
-    )
-
-    snimio: int | None = Field(
-        default=None,
-        description="ID člana ekipe koji je snimio polje.",
-        foreign_key="ekipa.ekipa_id",
+        ge=1,
+        le=4,
+        foreign_key="nule.nule_id",
         index=True,
     )
 
@@ -226,10 +218,9 @@ class PoljaMag(SQLModel, table=True):
         max_length=255,
     )
 
-    shift_x: NonNegativeFloat | None = Field(
-        default=0,
+    shift_x: NonNegativeFloat = Field(
+        default=0.0,
         description="Pomeranje u desno.",
-        ge=0,
         sa_column=Column(
             type_=Numeric(precision=5, scale=2, asdecimal=False),
             server_default=text(text="0.0"),
@@ -237,10 +228,9 @@ class PoljaMag(SQLModel, table=True):
         ),
     )
 
-    shift_y: NonNegativeFloat | None = Field(
+    shift_y: NonNegativeFloat = Field(
         default=0.0,
         description="Pomeranje na gore.",
-        ge=0.0,
         sa_column=Column(
             type_=Numeric(precision=5, scale=2, asdecimal=False),
             server_default=text(text="0.0"),
@@ -248,7 +238,7 @@ class PoljaMag(SQLModel, table=True):
         ),
     )
 
-    shift_z: float | None = Field(
+    shift_z: float = Field(
         default=0.0,
         description="Podešavanje z.",
         sa_column=Column(
@@ -263,11 +253,10 @@ class PoljaMag(SQLModel, table=True):
         description="Set pogrešno snimljenih redova.",
         sa_column=Column(
             type_=PG_ARRAY(item_type=Integer),
-            nullable=True,
         ),
     )
 
-    pov_mag: NonNegativeFloat | None = Field(
+    pov_mag: PositiveFloat | None = Field(
         default=None,
         description="Površina polja magnetometra (sa uračunatim preklapanjem).",
         sa_column=Column(
@@ -277,7 +266,7 @@ class PoljaMag(SQLModel, table=True):
                     cast(
                         expression=ST_Area(
                             ST_MakeValid(
-                                ST_UnaryUnion(literal_column(text="geometry")),
+                                ST_UnaryUnion(literal_column(text="geom")),
                             ),
                         ),
                         type_=Numeric,
@@ -289,7 +278,40 @@ class PoljaMag(SQLModel, table=True):
         ),
     )
 
-    geometry: Geometry = Field(
+    nula_x: PositiveFloat | None = Field(
+        default=None,
+        description="X koodinata nule polja.",
+        sa_column=Column(
+            type_=Double,
+        ),
+    )
+
+    nula_y: PositiveFloat | None = Field(
+        default=None,
+        description="Y koodinata nule polja.",
+        sa_column=Column(
+            type_=Double,
+        ),
+    )
+
+    mag_nula_angle: float | None = Field(
+        default=None,
+        description="Ugao nule polja u odnosu na sledeći verteks u smeru kazaljke na satu (u radijanima).",  # noqa: E501
+        sa_column=Column(
+            type_=Double,
+        ),
+    )
+    duzina_profila: PositiveInt | None = Field(
+        default=None,
+        description="Dužina profila.",
+    )
+
+    sirina_profila: PositiveInt | None = Field(
+        default=None,
+        description="Širina profila.",
+    )
+
+    geom: Geometry = Field(
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(
@@ -308,10 +330,16 @@ class PoljaGpr(SQLModel, table=True):
     model_config: SQLModelConfig = default_model_config
 
     __tablename__: str = "polja_gpr"
-    __table_args__: tuple[Index, CheckConstraint, CheckConstraint] = (
+    __table_args__: tuple[
+        Index,
+        CheckConstraint,
+        CheckConstraint,
+        CheckConstraint,
+    ] = (
         uq_projekat_polje_concat_gpr,
         ck_polje_naziv_format,
         ck_file_name_format_gpr,
+        ck_right_angles,
     )
 
     polje_id: int | None = Field(
@@ -327,12 +355,8 @@ class PoljaGpr(SQLModel, table=True):
     )
 
     datum: date | None = Field(
+        default=None,
         description="Datum snimanja.",
-        sa_column=Column(
-            type_=Date,
-            server_default=func.current_date(),
-            nullable=True,
-        ),
     )
 
     file_name: str | None = Field(
@@ -359,20 +383,17 @@ class PoljaGpr(SQLModel, table=True):
         ),
     )
 
-    projekat_id: int | None = Field(
-        default=None,
+    projekat_id: int = Field(
         description="ID projekta.",
         foreign_key="projekti.projekat_id",
         index=True,
     )
 
-    nule: str | None = Field(
-        default=None,
+    nule_id: int = Field(
         description="Početak snimanja.",
-        max_length=5,
-        sa_column=Column(
-            type_=NulaEnum,
-        ),
+        ge=1,
+        le=4,
+        foreign_key="nule.nule_id",
     )
 
     podloga: str | None = Field(
@@ -381,7 +402,7 @@ class PoljaGpr(SQLModel, table=True):
         max_length=255,
     )
 
-    gpr_id: int | None = Field(
+    gpr_id: int = Field(
         default=None,
         description="ID georadara.",
         foreign_key="georadari.gpr_id",
@@ -400,11 +421,12 @@ class PoljaGpr(SQLModel, table=True):
         description="Način snimanja.",
         sa_column=Column(
             type_=NacinSnimanjaEnum,
+            nullable=False,
             server_default=text(text="'kolica'"),
         ),
     )
 
-    pov_gpr: NonNegativeFloat | None = Field(
+    pov_gpr: PositiveFloat | None = Field(
         default=None,
         description="Površina polja georadara (sa uračunatim preklapanjem).",
         sa_column=Column(
@@ -414,7 +436,7 @@ class PoljaGpr(SQLModel, table=True):
                     cast(
                         expression=ST_Area(
                             ST_MakeValid(
-                                ST_UnaryUnion(literal_column(text="geometry")),
+                                ST_UnaryUnion(literal_column(text="geom")),
                             ),
                         ),
                         type_=Numeric,
@@ -426,7 +448,30 @@ class PoljaGpr(SQLModel, table=True):
         ),
     )
 
-    geometry: Geometry = Field(
+    nula_x: PositiveFloat | None = Field(
+        default=None,
+        description="X koodinata nule polja.",
+        sa_column=Column(
+            type_=Double,
+        ),
+    )
+    nula_y: PositiveFloat | None = Field(
+        default=None,
+        description="Y koodinata nule polja.",
+        sa_column=Column(
+            type_=Double,
+        ),
+    )
+
+    gpr_nula_angle: float | None = Field(
+        default=None,
+        description="Ugao nule polja u odnosu na sledeći verteks u obrnutom smeru kazaljke na satu (u radijanima).",  # noqa: E501
+        sa_column=Column(
+            type_=Double,
+        ),
+    )
+
+    geom: Geometry = Field(
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(
@@ -451,7 +496,7 @@ class ProfilMag(SQLModel, table=True):
     ] = (
         uq_projekat_profil_concat_mag,
         ck_profil_naziv_format,
-        ck_file_name_format_mag,
+        ck_linestring_two_points,
     )
 
     profil_id: int | None = Field(
@@ -467,35 +512,33 @@ class ProfilMag(SQLModel, table=True):
     )
 
     datum: date | None = Field(
+        default=None,
         description="Datum snimanja.",
-        sa_column=Column(
-            type_=Date,
-            server_default=func.current_date(),
-            nullable=True,
-        ),
     )
 
-    file_name: str | None = Field(
+    survey_number: PositiveInt | None = Field(
         default=None,
-        description="Naziv fajla.",
-        max_length=255,
+        description="Broj snimka.",
+        le=99,
     )
 
-    projekat_id: int | None = Field(
-        default=None,
+    projekat_id: int = Field(
         description="ID projekta.",
         foreign_key="projekti.projekat_id",
         index=True,
     )
 
-    mag_id: int | None = Field(
+    mag_id: int = Field(
         default=None,
         description="ID magnetometra.",
+        ge=1,
+        le=4,
         foreign_key="magnetometri.mag_id",
         index=True,
     )
 
-    snimio: int = Field(
+    ekipa_id: int = Field(
+        default=None,
         description="ID člana ekipe koji je snimio polje.",
         foreign_key="ekipa.ekipa_id",
         index=True,
@@ -513,13 +556,13 @@ class ProfilMag(SQLModel, table=True):
         sa_column=Column(
             Integer,
             Computed(
-                sqltext=ST_Length(literal_column(text="geometry")),
+                sqltext=ST_Length(ST_MakeValid(literal_column(text="geom"))),
                 persisted=True,
             ),
         ),
     )
 
-    geometry: Geometry = Field(
+    geom: Geometry = Field(
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(
@@ -537,7 +580,11 @@ class ProfilGpr(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "profili_gpr"
-    __table_args__: tuple[Index, CheckConstraint, CheckConstraint] = (
+    __table_args__: tuple[
+        Index,
+        CheckConstraint,
+        CheckConstraint,
+    ] = (
         uq_projekat_profil_concat_gpr,
         ck_profil_naziv_format,
         ck_file_name_format_gpr,
@@ -555,13 +602,9 @@ class ProfilGpr(SQLModel, table=True):
         index=True,
     )
 
-    datum: date | None = Field(
+    datum: date = Field(
+        default=None,
         description="Datum snimanja.",
-        sa_column=Column(
-            type_=Date,
-            server_default=func.current_date(),
-            nullable=True,
-        ),
     )
 
     file_name: str | None = Field(
@@ -570,7 +613,7 @@ class ProfilGpr(SQLModel, table=True):
         max_length=255,
     )
 
-    projekat_id: int | None = Field(
+    projekat_id: int = Field(
         default=None,
         description="ID projekta.",
         foreign_key="projekti.projekat_id",
@@ -583,15 +626,13 @@ class ProfilGpr(SQLModel, table=True):
         max_length=255,
     )
 
-    gpr_id: int | None = Field(
-        default=None,
+    gpr_id: int = Field(
         description="ID georadara.",
         foreign_key="georadari.gpr_id",
         index=True,
     )
 
-    antena_id: int | None = Field(
-        default=None,
+    antena_id: int = Field(
         description="ID antene.",
         foreign_key="antene.antena_id",
         index=True,
@@ -602,6 +643,7 @@ class ProfilGpr(SQLModel, table=True):
         description="Način snimanja.",
         sa_column=Column(
             type_=NacinSnimanjaEnum,
+            nullable=False,
             server_default=text(text="'kolica'"),
         ),
     )
@@ -612,13 +654,13 @@ class ProfilGpr(SQLModel, table=True):
         sa_column=Column(
             Integer,
             Computed(
-                sqltext=ST_Length(literal_column(text="geometry")),
+                sqltext=ST_Length(ST_MakeValid(literal_column(text="geom"))),
                 persisted=True,
             ),
         ),
     )
 
-    geometry: Geometry = Field(
+    geom: Geometry = Field(
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(

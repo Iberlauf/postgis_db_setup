@@ -5,24 +5,6 @@ from __future__ import annotations
 from sqlalchemy import event
 from sqlmodel import DDL, Enum, SQLModel
 
-NulaEnum: Enum = Enum(
-    "sever",
-    "jug",
-    "istok",
-    "zapad",
-    name="nula_enum",
-    metadata=SQLModel.metadata,
-)
-
-event.listen(
-    target=NulaEnum,
-    identifier="after_create",
-    fn=DDL("""--sql
-        COMMENT ON TYPE nula_enum IS 'Pravac snimanja: sever, jug, istok, zapad.'
-        """),
-)
-
-
 NacinSnimanjaEnum: Enum = Enum(
     "kolica",
     "ručno",
@@ -30,10 +12,20 @@ NacinSnimanjaEnum: Enum = Enum(
     metadata=SQLModel.metadata,
 )
 
-event.listen(
-    target=NacinSnimanjaEnum,
-    identifier="after_create",
-    fn=DDL("""--sql
-        COMMENT ON TYPE nacin_snimanja_enum IS 'Način snimanja: kolica, ručno.'
-        """),
+nacin_snimanja_comment: DDL = DDL(
+    statement="""--sql
+        COMMENT ON TYPE nula_enum IS 'Način snimanja: kolica ili ručno.'
+        """,
 )
+
+enum_coment_dict: dict[Enum, DDL] = {
+    NacinSnimanjaEnum: nacin_snimanja_comment,
+}
+
+
+for enum, comment in enum_coment_dict.items():
+    event.listen(
+        target=enum,
+        identifier="after_create",
+        fn=comment,
+    )

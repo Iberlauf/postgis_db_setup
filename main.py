@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 from sqlmodel import create_engine
 
 from config import settings
-from models import add_defaults, create_db_and_tables
-from sql_statements import register_triggers
+from models import create_db_and_tables, populate_defaults
+from sql_statements import register_immutability_triggers, register_triggers
 
 if TYPE_CHECKING:
     from sqlalchemy.engine.base import Engine
@@ -16,4 +16,5 @@ if __name__ == "__main__":
     engine: Engine = create_engine(url=DATABASE_URL, echo=True)
     register_triggers()
     create_db_and_tables(engine=engine)
-    add_defaults(engine=engine)
+    populate_defaults(engine=engine)
+    register_immutability_triggers(engine=engine)

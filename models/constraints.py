@@ -1,7 +1,7 @@
 """Constranits for models."""
 
 from geoalchemy2 import Geometry
-from geoalchemy2.functions import ST_Area, ST_NPoints, ST_OrientedEnvelope
+from geoalchemy2.functions import ST_Area, ST_MakeValid, ST_NPoints, ST_OrientedEnvelope
 from sqlmodel import (
     CheckConstraint,
     Index,
@@ -62,12 +62,6 @@ ck_profil_naziv_format: CheckConstraint = CheckConstraint(
     name="ck_profil_naziv_format",
 )
 
-ck_file_name_format_mag: CheckConstraint = CheckConstraint(
-    sqltext="""--sql
-            file_name ~ '^\\d{2}survey\\.wg$'
-            """,
-    name="ck_file_name_format_mag",
-)
 
 ck_file_name_format_gpr: CheckConstraint = CheckConstraint(
     sqltext="""--sql
@@ -91,22 +85,22 @@ ck_shift_y_non_negative: CheckConstraint = CheckConstraint(
 )
 
 ck_all_positive: CheckConstraint = CheckConstraint(
-    func.array_position(
+    sqltext=func.array_position(
         literal_column(text="pogresni_redovi"),
         0,
     ).is_(other=None),
     name="ck_all_positive",
 )
 
-check_rectangular_polygon: CheckConstraint = CheckConstraint(
-    and_(
-        ST_NPoints(literal_column(text="geometry", type_=Geometry)) == 5,
+ck_rectangular_polygon: CheckConstraint = CheckConstraint(
+    sqltext=and_(
+        ST_NPoints(ST_MakeValid(literal_column(text="geom", type_=Geometry))) == 5,
         func.abs(
             1
-            - ST_Area(literal_column(text="geometry", type_=Geometry))
+            - ST_Area(ST_MakeValid(literal_column(text="geom", type_=Geometry)))
             / ST_Area(
                 ST_OrientedEnvelope(
-                    literal_column(text="geometry", type_=Geometry),
+                    ST_MakeValid(literal_column(text="geom", type_=Geometry)),
                 ),
             ),
         )
@@ -114,6 +108,12 @@ check_rectangular_polygon: CheckConstraint = CheckConstraint(
     ),
     name="check_rectangular_polygon",
 )
+
+ck_linestring_two_points: CheckConstraint = CheckConstraint(
+    sqltext=ST_NPoints(ST_MakeValid(literal_column(text="geom", type_=Geometry))) == 2,
+    name="ck_linestring_two_points",
+)
+
 
 ck_projekat_datum_opseg: CheckConstraint = CheckConstraint(
     sqltext="""--sql
@@ -129,11 +129,16 @@ ck_antena_frekvencija_positive: CheckConstraint = CheckConstraint(
 )
 
 ck_pib_format: CheckConstraint = CheckConstraint(
-    "investitor_pib ~ '^[0-9]{9}$'",
+    sqltext="investitor_pib ~ '^[0-9]{9}$'",
     name="ck_pib_format",
 )
 
 ck_mb_format: CheckConstraint = CheckConstraint(
-    "investitor_maticni_broj ~ '^[0-9]{8}$'",
+    sqltext="investitor_maticni_broj ~ '^[0-9]{8}$'",
     name="ck_mb_format",
+)
+
+ck_right_angles: CheckConstraint = CheckConstraint(
+    sqltext=func.check_right_angles(literal_column(text="geom", type_=Geometry)),
+    name="ck_right_angles",
 )
