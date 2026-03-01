@@ -1,9 +1,24 @@
 """Enums."""
 
-from __future__ import annotations
+from enum import StrEnum
 
 from sqlalchemy import event
 from sqlmodel import DDL, Enum, SQLModel
+
+
+class GeomType(StrEnum):
+    """Geometry type enum."""
+
+    GEOMETRY = "GEOMETRY"
+    POINT = "POINT"
+    LINESTRING = "LINESTRING"
+    POLYGON = "POLYGON"
+    MULTIPOINT = "MULTIPOINT"
+    MULTILINESTRING = "MULTILINESTRING"
+    MULTIPOLYGON = "MULTIPOLYGON"
+    GEOMETRYCOLLECTION = "GEOMETRYCOLLECTION"
+    CURVE = "CURVE"
+
 
 NacinSnimanjaEnum: Enum = Enum(
     "kolica",
@@ -14,16 +29,16 @@ NacinSnimanjaEnum: Enum = Enum(
 
 nacin_snimanja_comment: DDL = DDL(
     statement="""--sql
-        COMMENT ON TYPE nula_enum IS 'Način snimanja: kolica ili ručno.'
-        """,
+COMMENT ON TYPE nacin_snimanja_enum IS 'Način snimanja: kolica ili ručno.'
+""",
 )
 
-enum_coment_dict: dict[Enum, DDL] = {
+enum_comment_dict: dict[Enum, DDL] = {
     NacinSnimanjaEnum: nacin_snimanja_comment,
 }
 
 
-for enum, comment in enum_coment_dict.items():
+for enum, comment in enum_comment_dict.items():
     event.listen(
         target=enum,
         identifier="after_create",

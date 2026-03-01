@@ -5,47 +5,31 @@ from sqlalchemy.sql.elements import TextClause  # noqa: TC002
 from sqlalchemy.sql.schema import Table  # noqa: TC002
 from sqlmodel import SQLModel
 
+from config import settings
+
 enable_out_db: TextClause = text(
-    text="""--sql
-        ALTER DATABASE geofizika_test
-        SET postgis.enable_outdb_rasters = true;
-        """,
+    text=f"""--sql
+ALTER DATABASE {settings.postgis_db_name}
+SET postgis.enable_outdb_rasters = true;
+""",
 )
 enable_gdal_driver: TextClause = text(
-    text="""--sql
-        ALTER DATABASE geofizika_test
-        SET postgis.gdal_enabled_drivers TO 'ENABLE_ALL';
-        """,
+    text=f"""--sql
+ALTER DATABASE {settings.postgis_db_name}
+SET postgis.gdal_enabled_drivers TO 'ENABLE_ALL';
+""",
 )
 gdal_vsi_options: TextClause = text(
-    text="""--sql
-        ALTER DATABASE geofizika_test
-        SET postgis.gdal_vsi_options = 'CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif';
-        """,
+    text=f"""--sql
+ALTER DATABASE {settings.postgis_db_name}
+SET postgis.gdal_vsi_options = 'CPL_VSIL_CURL_ALLOWED_EXTENSIONS=.tif';
+""",
 )
 
 first_sql_statements: list[TextClause] = []
 first_sql_statements.append(enable_out_db)
 first_sql_statements.append(enable_gdal_driver)
 first_sql_statements.append(gdal_vsi_options)
-
-insert_epsg_3855: TextClause = text(
-    text="""--sql
-INSERT INTO spatial_ref_sys (srid, auth_name, auth_srid, proj4text, srtext)
-VALUES (
-    3855,
-    'EPSG',
-    3855,
-    '+vunits=m +no_defs +type=crs',
-    'VERT_CS["EGM2008 height",'
-    'VERT_DATUM["EGM2008 geoid",2005,AUTHORITY["EPSG","1027"]],'
-    'UNIT["metre",1,AUTHORITY["EPSG","9001"]],'
-    'AXIS["Gravity-related height",UP],'
-    'AUTHORITY["EPSG","3855"]]'
-)
-ON CONFLICT (srid) DO NOTHING;
-""",
-)
 
 create_z_trigger_function: DDL = DDL(
     statement="""--sql
@@ -61,7 +45,7 @@ DECLARE
     geom_4979 geometry;
 BEGIN
     IF NEW.geom IS NOT NULL THEN
-        geom_4326 := ST_Transform(ST_MakeValid(NEW.geom), 4326);
+        geom_4326 := ST_Transform(NEW.geom, 4326);
 
         SELECT ST_Value(rast, geom_4326)::double precision
         INTO raster_elevation
@@ -109,10 +93,10 @@ $$ LANGUAGE plpgsql;
 create_z_trigger: DDL = DDL(
     statement="""--sql
 CREATE TRIGGER trg_update_tacka_z
-    BEFORE INSERT OR UPDATE OF geom
-    ON tacke
-    FOR EACH ROW
-    EXECUTE FUNCTION update_tacka_z();
+BEFORE INSERT OR UPDATE OF geom
+ON tacke
+FOR EACH ROW
+EXECUTE FUNCTION update_tacka_z();
 """,
 )
 
@@ -126,7 +110,7 @@ BEGIN
     IF (TG_OP = 'INSERT' OR TG_OP = 'UPDATE') THEN
         UPDATE projekti
         SET total_pov_mag = (
-            SELECT COALESCE(SUM(ST_Area(ST_MakeValid(geom))), 0)
+            SELECT COALESCE(SUM(ST_Area(geom)), 0)
             FROM polja_mag
             WHERE projekat_id = NEW.projekat_id
         )
@@ -136,7 +120,7 @@ BEGIN
     IF (TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND OLD.projekat_id != NEW.projekat_id)) THEN
         UPDATE projekti
         SET total_pov_mag = (
-            SELECT COALESCE(SUM(ST_Area(ST_MakeValid(geom))), 0)
+            SELECT COALESCE(SUM(ST_Area(geom)), 0)
             FROM polja_mag
             WHERE projekat_id = OLD.projekat_id
         )
@@ -168,7 +152,7 @@ BEGIN
     IF (TG_OP = 'INSERT' OR TG_OP = 'UPDATE') THEN
         UPDATE projekti
         SET total_pov_gpr = (
-            SELECT COALESCE(SUM(ST_Area(ST_MakeValid(geom))), 0)
+            SELECT COALESCE(SUM(ST_Area(geom)), 0)
             FROM polja_gpr
             WHERE projekat_id = NEW.projekat_id
         )
@@ -178,7 +162,7 @@ BEGIN
     IF (TG_OP = 'DELETE' OR (TG_OP = 'UPDATE' AND OLD.projekat_id != NEW.projekat_id)) THEN
         UPDATE projekti
         SET total_pov_gpr = (
-            SELECT COALESCE(SUM(ST_Area(ST_MakeValid(geom))), 0)
+            SELECT COALESCE(SUM(ST_Area(geom)), 0)
             FROM polja_gpr
             WHERE projekat_id = OLD.projekat_id
         )
@@ -262,69 +246,81 @@ FOR EACH ROW EXECUTE FUNCTION check_gpr_antena_proizvodjac();
 """,  # noqa: E501
 )
 
-calculate_non_overlaping_area: DDL = DDL(
+calculate_non_overlapping_area: DDL = DDL(
     statement="""--sql
 DROP FUNCTION IF EXISTS calculate_non_overlapping_area(INTEGER, DATE, TEXT) CASCADE;
+
 CREATE OR REPLACE FUNCTION calculate_non_overlapping_area(
     p_projekat_id INTEGER,
-    p_datum DATE,
-    p_table_name TEXT
-) RETURNS NUMERIC AS $$
+    p_datum       DATE,
+    p_table_name  TEXT
+)
+RETURNS NUMERIC AS $$
+
 DECLARE
-    v_total_area NUMERIC;
-    v_previous_union geometry;
+    v_total_area     NUMERIC;
+    v_previous_union GEOMETRY;
+
 BEGIN
+
     EXECUTE format(
-        'SELECT ST_UnaryUnion(ST_Collect(ST_MakeValid(geom)))
+        'SELECT ST_UnaryUnion(ST_Collect(geom))
          FROM %%I
-         WHERE projekat_id = $1 AND datum < $2',
+         WHERE projekat_id = $1
+           AND datum < $2',
         p_table_name
-    ) INTO v_previous_union
+    )
+    INTO v_previous_union
     USING p_projekat_id, p_datum;
 
     IF v_previous_union IS NOT NULL THEN
+
         EXECUTE format(
             'SELECT COALESCE(
                 ROUND(
                     ST_Area(
-                        ST_MakeValid(
-                            ST_UnaryUnion(
-                                ST_Collect(
-                                    ST_Difference(ST_MakeValid(geom), $1)
-                                )
+                        ST_UnaryUnion(
+                            ST_Collect(
+                                ST_Difference(geom, $1)
                             )
                         )
-                    )::numeric,
+                    )::NUMERIC,
                     3
                 ),
                 0
             )
             FROM %%I
-            WHERE projekat_id = $2 AND datum = $3',
+            WHERE projekat_id = $2
+              AND datum = $3',
             p_table_name
-        ) INTO v_total_area
+        )
+        INTO v_total_area
         USING v_previous_union, p_projekat_id, p_datum;
+
     ELSE
+
         EXECUTE format(
             'SELECT COALESCE(
                 ROUND(
                     ST_Area(
-                        ST_MakeValid(
-                            ST_UnaryUnion(ST_Collect(ST_MakeValid(geom)))
-                        )
-                    )::numeric,
+                        ST_UnaryUnion(ST_Collect(geom))
+                    )::NUMERIC,
                     3
                 ),
                 0
             )
             FROM %%I
-            WHERE projekat_id = $1 AND datum = $2',
+            WHERE projekat_id = $1
+              AND datum = $2',
             p_table_name
-        ) INTO v_total_area
+        )
+        INTO v_total_area
         USING p_projekat_id, p_datum;
+
     END IF;
 
     RETURN COALESCE(v_total_area, 0);
+
 END;
 $$ LANGUAGE plpgsql;
 """,
@@ -337,15 +333,15 @@ CREATE OR REPLACE FUNCTION update_povrsine_po_datumu()
 RETURNS TRIGGER AS $$
 DECLARE
     v_projekat_id INTEGER;
-    v_datum DATE;
-    v_old_datum DATE;
-    v_area_mag NUMERIC;
-    v_area_gpr NUMERIC;
+    v_datum       DATE;
+    v_old_datum   DATE := NULL;
+    v_area_mag    NUMERIC;
+    v_area_gpr    NUMERIC;
 BEGIN
     IF (TG_OP = 'INSERT' OR TG_OP = 'UPDATE') THEN
         v_projekat_id := NEW.projekat_id;
         v_datum := NEW.datum;
-    ELSIF (TG_OP = 'DELETE') THEN
+    ELSE
         v_projekat_id := OLD.projekat_id;
         v_datum := OLD.datum;
     END IF;
@@ -364,11 +360,7 @@ BEGIN
     END IF;
 
     IF v_datum IS NULL THEN
-        IF (TG_OP = 'DELETE') THEN
-            RETURN OLD;
-        ELSE
-            RETURN NEW;
-        END IF;
+        RETURN COALESCE(NEW, OLD);
     END IF;
 
     v_area_mag := calculate_non_overlapping_area(v_projekat_id, v_datum, 'polja_mag');
@@ -381,29 +373,24 @@ BEGIN
         pov_mag = EXCLUDED.pov_mag,
         pov_gpr = EXCLUDED.pov_gpr;
 
-    IF (TG_OP = 'UPDATE' OR TG_OP = 'DELETE') THEN
-        IF (TG_OP = 'UPDATE' AND v_old_datum IS NOT NULL AND v_old_datum <> v_datum) THEN
-            UPDATE povrsine_po_datumu ppd
-            SET
-                pov_mag = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_mag'),
-                pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr')
-            WHERE ppd.projekat_id = v_projekat_id
-            AND ppd.datum >= v_old_datum;
-        ELSE
-            UPDATE povrsine_po_datumu ppd
-            SET
-                pov_mag = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_mag'),
-                pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr')
-            WHERE ppd.projekat_id = v_projekat_id
-            AND ppd.datum > v_datum;
-        END IF;
+    UPDATE povrsine_po_datumu ppd
+    SET
+        pov_mag = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_mag'),
+        pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr')
+    WHERE ppd.projekat_id = v_projekat_id
+    AND ppd.datum > v_datum;
+
+    IF (TG_OP = 'UPDATE' AND v_old_datum IS NOT NULL AND v_old_datum <> v_datum) THEN
+        UPDATE povrsine_po_datumu ppd
+        SET
+            pov_mag = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_mag'),
+            pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr')
+        WHERE ppd.projekat_id = v_projekat_id
+        AND ppd.datum >= v_old_datum
+        AND ppd.datum <= v_datum;
     END IF;
 
-    IF (TG_OP = 'DELETE') THEN
-        RETURN OLD;
-    ELSE
-        RETURN NEW;
-    END IF;
+    RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql;
 """,  # noqa: E501
@@ -439,17 +426,40 @@ CREATE TRIGGER trg_polja_gpr_update_povrsine
 """,
 )
 
-create_nula_xy_coordinates_function: DDL = DDL(
+create_calculate_mag_nula_xy_coordinates_function: DDL = DDL(
     statement="""--sql
-DROP FUNCTION IF EXISTS calculate_nula_xy_coordinates() CASCADE;
-CREATE OR REPLACE FUNCTION calculate_nula_xy_coordinates()
+DROP FUNCTION IF EXISTS calculate_mag_nula_xy_coordinates() CASCADE;
+
+CREATE OR REPLACE FUNCTION calculate_mag_nula_xy_coordinates()
 RETURNS TRIGGER AS $$
 DECLARE
     nula_point GEOMETRY;
 BEGIN
     IF NEW.nule_id IS NOT NULL AND NEW.geom IS NOT NULL THEN
         nula_point := ST_PointN(
-            ST_ExteriorRing(ST_Normalize(ST_OrientedEnvelope(ST_MakeValid(NEW.geom)))),
+            ST_ExteriorRing(ST_Normalize(NEW.geom)),
+            NEW.nule_id
+        );
+        NEW.nula_x := ST_X(nula_point);
+        NEW.nula_y := ST_Y(nula_point);
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+""",
+)
+
+create_calculate_gpr_nula_xy_coordinates_function: DDL = DDL(
+    statement="""--sql
+DROP FUNCTION IF EXISTS calculate_gpr_nula_xy_coordinates() CASCADE;
+CREATE OR REPLACE FUNCTION calculate_gpr_nula_xy_coordinates()
+RETURNS TRIGGER AS $$
+DECLARE
+    nula_point GEOMETRY;
+BEGIN
+    IF NEW.nule_id IS NOT NULL AND NEW.geom IS NOT NULL THEN
+        nula_point := ST_PointN(
+            ST_ExteriorRing(ST_Normalize(ST_OrientedEnvelope(NEW.geom))),
             NEW.nule_id
         );
         NEW.nula_x := ST_X(nula_point);
@@ -463,21 +473,21 @@ $$ LANGUAGE plpgsql;
 
 create_nula_xy_trigger_mag: DDL = DDL(
     statement="""--sql
-DROP TRIGGER IF EXISTS trigger_calculate_nula_xy ON polja_mag;
-CREATE TRIGGER trigger_calculate_nula_xy
+DROP TRIGGER IF EXISTS trigger_calculate_nula_xy_mag ON polja_mag;
+CREATE TRIGGER trigger_calculate_nula_xy_mag
 BEFORE INSERT OR UPDATE OF geom, nule_id ON polja_mag
 FOR EACH ROW
-EXECUTE FUNCTION calculate_nula_xy_coordinates();
+EXECUTE FUNCTION calculate_mag_nula_xy_coordinates();
 """,
 )
 
 create_nula_xy_trigger_gpr: DDL = DDL(
     statement="""--sql
-DROP TRIGGER IF EXISTS trigger_calculate_nula_xy ON polja_gpr;
-CREATE TRIGGER trigger_calculate_nula_xy
+DROP TRIGGER IF EXISTS trigger_calculate_nula_xy_gpr ON polja_gpr;
+CREATE TRIGGER trigger_calculate_nula_xy_gpr
 BEFORE INSERT OR UPDATE OF geom, nule_id ON polja_gpr
 FOR EACH ROW
-EXECUTE FUNCTION calculate_nula_xy_coordinates();
+EXECUTE FUNCTION calculate_gpr_nula_xy_coordinates();
 """,
 )
 
@@ -492,17 +502,17 @@ DECLARE
 BEGIN
     IF NEW.nule_id IS NOT NULL AND NEW.geom IS NOT NULL THEN
         current_point := ST_PointN(
-            ST_ExteriorRing(ST_Normalize(ST_MakeValid(NEW.geom))),
+            ST_ExteriorRing(ST_Normalize(NEW.geom)),
             NEW.nule_id
         );
         IF NEW.nule_id < 4 THEN
             next_point := ST_PointN(
-                ST_ExteriorRing(ST_Normalize(ST_MakeValid(NEW.geom))),
+                ST_ExteriorRing(ST_Normalize(NEW.geom)),
                 NEW.nule_id + 1
             );
         ELSE
             next_point := ST_PointN(
-                ST_ExteriorRing(ST_Normalize(ST_MakeValid(NEW.geom))),
+                ST_ExteriorRing(ST_Normalize(NEW.geom)),
                 1
             );
         END IF;
@@ -535,17 +545,17 @@ DECLARE
 BEGIN
     IF NEW.nule_id IS NOT NULL AND NEW.geom IS NOT NULL THEN
         current_point := ST_PointN(
-            ST_ExteriorRing(ST_Normalize(ST_OrientedEnvelope(ST_MakeValid(NEW.geom)))),
+            ST_ExteriorRing(ST_Normalize(ST_OrientedEnvelope(NEW.geom))),
             NEW.nule_id
         );
         IF NEW.nule_id > 1 THEN
             prev_point := ST_PointN(
-                ST_ExteriorRing(ST_Normalize(ST_OrientedEnvelope(ST_MakeValid(NEW.geom)))),
+                ST_ExteriorRing(ST_Normalize(ST_OrientedEnvelope(NEW.geom))),
                 NEW.nule_id - 1
             );
         ELSE
             prev_point := ST_PointN(
-                ST_ExteriorRing(ST_Normalize(ST_OrientedEnvelope(ST_MakeValid(NEW.geom)))),
+                ST_ExteriorRing(ST_Normalize(ST_OrientedEnvelope(NEW.geom))),
                 4
             );
         END IF;
@@ -580,21 +590,21 @@ DECLARE
     p3 GEOMETRY;
     angle FLOAT;
 BEGIN
-    n := ST_NPoints(ST_MakeValid(geom)) - 1;
+    n := ST_NPoints(geom) - 1;
 
     FOR i IN 1..n LOOP
         IF i = 1 THEN
-            p1 := ST_PointN(ST_ExteriorRing(ST_MakeValid(geom)), n);
+            p1 := ST_PointN(ST_ExteriorRing(geom), n);
         ELSE
-            p1 := ST_PointN(ST_ExteriorRing(ST_MakeValid(geom)), i - 1);
+            p1 := ST_PointN(ST_ExteriorRing(geom), i - 1);
         END IF;
 
-        p2 := ST_PointN(ST_ExteriorRing(ST_MakeValid(geom)), i);
+        p2 := ST_PointN(ST_ExteriorRing(geom), i);
 
         IF i = n THEN
-            p3 := ST_PointN(ST_ExteriorRing(ST_MakeValid(geom)), 1);
+            p3 := ST_PointN(ST_ExteriorRing(geom), 1);
         ELSE
-            p3 := ST_PointN(ST_ExteriorRing(ST_MakeValid(geom)), i + 1);
+            p3 := ST_PointN(ST_ExteriorRing(geom), i + 1);
         END IF;
 
         angle := ST_Angle(p1, p2, p3);
@@ -623,7 +633,7 @@ DECLARE
 BEGIN
     IF NEW.nule_id IS NOT NULL AND NEW.geom IS NOT NULL THEN
         current_point := ST_PointN(
-            ST_ExteriorRing(ST_Normalize(ST_MakeValid(NEW.geom))),
+            ST_ExteriorRing(ST_Normalize(NEW.geom)),
             NEW.nule_id
         );
 
@@ -631,17 +641,17 @@ BEGIN
         right_index := CASE WHEN NEW.nule_id > 1 THEN NEW.nule_id - 1 ELSE 4 END;
 
         left_point := ST_PointN(
-            ST_ExteriorRing(ST_Normalize(ST_MakeValid(NEW.geom))),
+            ST_ExteriorRing(ST_Normalize(NEW.geom)),
             left_index
         );
 
         right_point := ST_PointN(
-            ST_ExteriorRing(ST_Normalize(ST_MakeValid(NEW.geom))),
+            ST_ExteriorRing(ST_Normalize(NEW.geom)),
             right_index
         );
 
         NEW.duzina_profila := ROUND(ST_Distance(current_point, left_point))::INTEGER;
-        NEW.sirina_profila := ROUND(ST_Distance(current_point, right_point))::INTEGER;
+        NEW.sirina_polja := ROUND(ST_Distance(current_point, right_point))::INTEGER;
     END IF;
 
     RETURN NEW;
@@ -662,19 +672,19 @@ EXECUTE FUNCTION calculate_mag_profile_dimensions();
 
 restrict_ekipa_delete: DDL = DDL(
     statement="""--sql
-    DROP TRIGGER IF EXISTS restrict_ekipa_delete ON ekipa;
-    DROP FUNCTION IF EXISTS restrict_ekipa_delete();
+DROP TRIGGER IF EXISTS restrict_ekipa_delete ON ekipa;
+DROP FUNCTION IF EXISTS fn_restrict_ekipa_delete();
 
-    CREATE OR REPLACE FUNCTION restrict_ekipa_delete()
-    RETURNS TRIGGER AS $$
-    BEGIN
-        RAISE EXCEPTION 'Brisanje članova ekipe nije dozvoljeno.';
-    END;
-    $$ LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION fn_restrict_ekipa_delete()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'Brisanje članova ekipe nije dozvoljeno.';
+END;
+$$ LANGUAGE plpgsql;
 
-    CREATE OR REPLACE TRIGGER restrict_ekipa_delete
-    BEFORE DELETE ON ekipa
-    FOR EACH ROW EXECUTE FUNCTION restrict_ekipa_delete();
+CREATE OR REPLACE TRIGGER restrict_ekipa_delete
+BEFORE DELETE ON ekipa
+FOR EACH ROW EXECUTE FUNCTION fn_restrict_ekipa_delete();
 """,
 )
 
@@ -684,7 +694,6 @@ def register_triggers() -> None:
     tacke_table: Table = SQLModel.metadata.tables["tacke"]
     polja_mag_table: Table = SQLModel.metadata.tables["polja_mag"]
     polja_gpr_table: Table = SQLModel.metadata.tables["polja_gpr"]
-    projekti_table: Table = SQLModel.metadata.tables["projekti"]  # noqa: F841
     povrsine_po_datumu: Table = SQLModel.metadata.tables["povrsine_po_datumu"]
     ekipa_table: Table = SQLModel.metadata.tables["ekipa"]
 
@@ -699,7 +708,7 @@ def register_triggers() -> None:
             create_trigger_all_unique,
             create_total_mag_trigger_function,
             create_total_mag_trigger,
-            create_nula_xy_coordinates_function,
+            create_calculate_mag_nula_xy_coordinates_function,
             create_nula_xy_trigger_mag,
             create_mag_angle_function,
             create_mag_angle_trigger,
@@ -710,13 +719,13 @@ def register_triggers() -> None:
             trigger_check_proizvodjac,
             create_total_gpr_trigger_function,
             create_total_gpr_trigger,
-            create_nula_xy_coordinates_function,
+            create_calculate_gpr_nula_xy_coordinates_function,
             create_nula_xy_trigger_gpr,
             create_gpr_angle_function,
             create_gpr_angle_trigger,
         ],
         povrsine_po_datumu: [
-            calculate_non_overlaping_area,
+            calculate_non_overlapping_area,
             update_povrsine_function,
             drop_trigger_polja_mag,
             drop_trigger_polja_gpr,
@@ -742,18 +751,18 @@ def register_triggers() -> None:
 
 create_immutability_function: TextClause = text(
     text="""--sql
-    CREATE OR REPLACE FUNCTION prevent_changes()
-    RETURNS TRIGGER AS $$
-    BEGIN
-        RAISE EXCEPTION 'This table is immutable';
-    END;
-    $$ LANGUAGE plpgsql;
-    """,
+CREATE OR REPLACE FUNCTION prevent_changes()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'This table is immutable';
+END;
+$$ LANGUAGE plpgsql;
+""",
 )
 
 
 def register_immutability_triggers(engine: Engine) -> None:
-    """Register immutability triggers to prevent modifications after initial data load."""  # noqa: E501
+    """Register immutability triggers after initial data load."""
     with engine.connect() as conn:
         conn.execute(statement=create_immutability_function)
         immutable_tables: list[str] = ["nule"]
@@ -770,7 +779,3 @@ def register_immutability_triggers(engine: Engine) -> None:
             )
 
         conn.commit()
-
-
-if __name__ == "__main__":
-    ...

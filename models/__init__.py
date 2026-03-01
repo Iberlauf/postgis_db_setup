@@ -1,8 +1,8 @@
 """Init."""
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Connection, Engine
+from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import Session, SQLModel
 
 from default_values import (
@@ -11,14 +11,21 @@ from default_values import (
     georadar_defaults,
     investitor_defaults,
     magnetometar_defaults,
-    nule_defaults,
     proizvodjac_defaults,
     projekat_defaults,
 )
-from models.enums import (
-    NacinSnimanjaEnum,
+from mandatory_defaults import (
+    epsg_3855,
+    nule_defaults,
 )
-from models.geometry_models import PoljaGpr, PoljaMag, ProfilGpr, ProfilMag, Tacke
+from models.enums import NacinSnimanjaEnum
+from models.geometry_models import (
+    PoljaGpr,
+    PoljaMag,
+    ProfilGpr,
+    ProfilMag,
+    Tacke,
+)
 from models.non_geo_models import (
     Antena,
     Ekipa,
@@ -27,18 +34,26 @@ from models.non_geo_models import (
     Magnetometar,
     Nula,
     Podesavanje,
-    PoljaGprEkipa,
-    PoljaMagEkipa,
     PovrsinaPoDatumu,
-    ProfilGprEkipa,
-    ProfilMagEkipa,
     Proizvodjac,
     Projekat,
-    ProjekatEkipa,
+    SpatialRefSys,
 )
-from sql_statements import (
-    first_sql_statements,
-    insert_epsg_3855,
+from sql_statements import first_sql_statements
+
+if TYPE_CHECKING:
+    from sqlalchemy import Engine
+    from sqlalchemy.dialects.postgresql.dml import Insert
+    from sqlalchemy.sql.schema import Table
+
+tables_to_drop: list[Table] = [
+    t for t in SQLModel.metadata.sorted_tables if t.name != "spatial_ref_sys"
+]
+
+insert_epsg_3855: Insert = (
+    insert(table=SpatialRefSys)
+    .values(epsg_3855)
+    .on_conflict_do_nothing(index_elements=["srid"])
 )
 
 
@@ -50,15 +65,12 @@ def create_db_and_tables(engine: Engine) -> None:
 
     """
     with engine.begin() as conn:
-        if isinstance(conn, Connection):
-            for statement in first_sql_statements:
-                conn.execute(statement=statement)
-            conn.execute(statement=insert_epsg_3855)
+        for statement in first_sql_statements:
+            conn.execute(statement=statement)
+        conn.execute(statement=insert_epsg_3855)
 
-            SQLModel.metadata.drop_all(bind=conn)
-            SQLModel.metadata.create_all(bind=conn)
-
-            conn.commit()
+        SQLModel.metadata.drop_all(bind=conn, tables=tables_to_drop)
+        SQLModel.metadata.create_all(bind=conn)
 
 
 def populate_defaults(engine: Engine) -> None:
@@ -102,17 +114,13 @@ __all__: list[str] = [
     "Nula",
     "Podesavanje",
     "PoljaGpr",
-    "PoljaGprEkipa",
     "PoljaMag",
-    "PoljaMagEkipa",
     "PovrsinaPoDatumu",
     "ProfilGpr",
-    "ProfilGprEkipa",
     "ProfilMag",
-    "ProfilMagEkipa",
     "Proizvodjac",
     "Projekat",
-    "ProjekatEkipa",
     "Tacke",
     "create_db_and_tables",
+    "populate_defaults",
 ]

@@ -1,7 +1,5 @@
 """Non geometry models."""
 
-from __future__ import annotations
-
 from datetime import date  # noqa: TC003
 
 from pydantic import (  # noqa: TC002
@@ -10,8 +8,7 @@ from pydantic import (  # noqa: TC002
     PositiveFloat,
     PositiveInt,
 )
-from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
-from sqlalchemy.dialects.postgresql import HSTORE
+from sqlalchemy.dialects import postgresql
 from sqlmodel import (
     CheckConstraint,
     Column,
@@ -23,6 +20,8 @@ from sqlmodel import (
     SQLModel,
     String,
     UniqueConstraint,
+    literal,
+    literal_column,
     text,
 )
 from sqlmodel._compat import SQLModelConfig  # noqa: TC002
@@ -32,14 +31,22 @@ from models.constraints import (
     ck_mb_format,
     ck_pib_format,
     ck_projekat_datum_opseg,
+    default_model_config,
     uq_projekat_datum,
 )
 
-default_model_config: SQLModelConfig = {
-    "arbitrary_types_allowed": True,
-    "from_attributes": True,
-    "extra": "ignore",
-}
+
+class SpatialRefSys(SQLModel, table=True):
+    """The default PostGIS created table for coordinate systems."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "spatial_ref_sys"
+
+    srid: PositiveInt = Field(primary_key=True)
+    auth_name: str | None = Field(default=None, max_length=256)
+    auth_srid: PositiveInt | None = None
+    srtext: str | None = Field(default=None, max_length=2048)
+    proj4text: str | None = Field(default=None, max_length=2048)
 
 
 class Ekipa(SQLModel, table=True):
@@ -47,23 +54,27 @@ class Ekipa(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "ekipa"
+    __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
     ekipa_id: int | None = Field(
         default=None,
         description="ID člana ekipe.",
         primary_key=True,
+        sa_column_kwargs={"comment": "ID člana ekipe."},
     )
 
     ekipa_ime: str = Field(
         description="Ime člana ekipe.",
         max_length=20,
         index=True,
+        sa_column_kwargs={"comment": "Ime člana ekipe."},
     )
 
     ekipa_prezime: str = Field(
-        description="prezime člana ekipe.",
+        description="Prezime člana ekipe.",
         max_length=20,
         index=True,
+        sa_column_kwargs={"comment": "Prezime člana ekipe."},
     )
 
     ekipa_full_name: str | None = Field(
@@ -74,153 +85,16 @@ class Ekipa(SQLModel, table=True):
             Column(
                 String(length=50),
                 Computed(
-                    sqltext="""--sql
-                         ekipa_ime || ' ' || ekipa_prezime
-                         """,
+                    sqltext=literal_column(text="ekipa_ime", type_=String)
+                    .op(opstring="||")(literal(value=" ", type_=String))
+                    .op(opstring="||")(
+                        literal_column(text="ekipa_prezime", type_=String),
+                    ),
                 ),
                 unique=True,
                 index=True,
+                comment="Puno ime i prezime člana ekipe.",
             )
-        ),
-    )
-
-
-class PoljaMagEkipa(SQLModel, table=True):
-    """Many-to-many veza između PoljaMag i Ekipa."""
-
-    model_config: SQLModelConfig = default_model_config
-    __tablename__: str = "polja_mag_ekipa"
-
-    polje_id: int = Field(
-        default=None,
-        description="Primary key tabele polja_mag.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="polja_mag.polje_id",
-                onupdate="CASCADE",
-                ondelete="CASCADE",
-            ),
-            primary_key=True,
-        ),
-    )
-
-    ekipa_id: int = Field(
-        default=None,
-        description="Primary key tabele ekipa.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="ekipa.ekipa_id",
-                onupdate="CASCADE",
-                ondelete="RESTRICT",
-            ),
-            primary_key=True,
-        ),
-    )
-
-
-class ProfilMagEkipa(SQLModel, table=True):
-    """Many-to-many veza između ProfilMag i Ekipa."""
-
-    model_config: SQLModelConfig = default_model_config
-    __tablename__: str = "profil_mag_ekipa"
-
-    polje_id: int = Field(
-        default=None,
-        description="Primary key tabele profili_mag.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="profili_mag.profil_id",
-                onupdate="CASCADE",
-                ondelete="CASCADE",
-            ),
-            primary_key=True,
-        ),
-    )
-
-    ekipa_id: int = Field(
-        default=None,
-        description="Primary key tabele ekipa.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="ekipa.ekipa_id",
-                onupdate="CASCADE",
-                ondelete="RESTRICT",
-            ),
-            primary_key=True,
-        ),
-    )
-
-
-class PoljaGprEkipa(SQLModel, table=True):
-    """Many-to-many veza između PoljaGpr i Ekipa."""
-
-    model_config: SQLModelConfig = default_model_config
-    __tablename__: str = "polja_gpr_ekipa"
-
-    polje_id: int | None = Field(
-        default=None,
-        description="Primary key tabele polja_gpr.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="polja_gpr.polje_id",
-                onupdate="CASCADE",
-                ondelete="CASCADE",
-            ),
-            primary_key=True,
-        ),
-    )
-
-    ekipa_id: int | None = Field(
-        default=None,
-        description="Primary key tabele ekipa.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="ekipa.ekipa_id",
-                onupdate="CASCADE",
-                ondelete="RESTRICT",
-            ),
-            primary_key=True,
-        ),
-    )
-
-
-class ProfilGprEkipa(SQLModel, table=True):
-    """Many-to-many veza između ProfilGpr i Ekipa."""
-
-    model_config: SQLModelConfig = default_model_config
-    __tablename__: str = "profil_gpr_ekipa"
-
-    polje_id: int = Field(
-        default=None,
-        description="Primary key tabele profili_gpr.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="profili_gpr.profil_id",
-                onupdate="CASCADE",
-                ondelete="CASCADE",
-            ),
-            primary_key=True,
-        ),
-    )
-
-    ekipa_id: int = Field(
-        default=None,
-        description="Primary key tabele ekipa.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="ekipa.ekipa_id",
-                onupdate="CASCADE",
-                ondelete="RESTRICT",
-            ),
-            primary_key=True,
         ),
     )
 
@@ -230,15 +104,17 @@ class Investitor(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "investitori"
-    __table_args__: tuple[CheckConstraint, ...] = (
+    __table_args__: tuple[CheckConstraint, CheckConstraint, dict[str, str]] = (
         ck_pib_format,
         ck_mb_format,
+        {"comment": str(object=__doc__)},
     )
 
     investitor_id: int | None = Field(
         default=None,
         description="ID investitora.",
         primary_key=True,
+        sa_column_kwargs={"comment": "ID investitora."},
     )
 
     investitor_naziv: str = Field(
@@ -246,24 +122,31 @@ class Investitor(SQLModel, table=True):
         max_length=255,
         unique=True,
         index=True,
+        sa_column_kwargs={"comment": "Naziv investitora."},
     )
+
     investitor_adresa: str | None = Field(
         default=None,
         description="Adresa investitora.",
         max_length=255,
+        sa_column_kwargs={"comment": "Adresa investitora."},
     )
+
     investitor_email: EmailStr | None = Field(
         default=None,
         description="Email adresa investitora.",
         max_length=255,
         unique=True,
+        sa_column_kwargs={"comment": "Email adresa investitora."},
     )
+
     investitor_pib: str | None = Field(
         default=None,
         description="Poreski investicioni broj investitora.",
         unique=True,
         min_length=9,
         max_length=9,
+        sa_column_kwargs={"comment": "Poreski investicioni broj investitora."},
     )
 
     investitor_maticni_broj: str | None = Field(
@@ -272,12 +155,14 @@ class Investitor(SQLModel, table=True):
         unique=True,
         min_length=8,
         max_length=8,
+        sa_column_kwargs={"comment": "Matični broj investitora."},
     )
 
     investitor_broj_telefona: str | None = Field(
         default=None,
         description="Broj telefona investitora.",
         max_length=13,
+        sa_column_kwargs={"comment": "Broj telefona investitora."},
     )
 
 
@@ -286,12 +171,19 @@ class Projekat(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "projekti"
-    __table_args__: tuple[CheckConstraint] = (ck_projekat_datum_opseg,)
+    __table_args__: tuple[
+        CheckConstraint,
+        dict[str, str],
+    ] = (
+        ck_projekat_datum_opseg,
+        {"comment": str(object=__doc__)},
+    )
 
     projekat_id: int | None = Field(
         default=None,
         description="ID projekta.",
         primary_key=True,
+        sa_column_kwargs={"comment": "ID projekta."},
     )
 
     projekat_naziv: str = Field(
@@ -299,22 +191,26 @@ class Projekat(SQLModel, table=True):
         max_length=255,
         unique=True,
         index=True,
+        sa_column_kwargs={"comment": "Naziv projekta."},
     )
 
     broj_ugovora: str | None = Field(
         default=None,
         description="Broj ugovora.",
         max_length=255,
+        sa_column_kwargs={"comment": "Broj ugovora."},
     )
 
     projekat_start_datum: date | None = Field(
         default=None,
         description="Datum početka projekta.",
+        sa_column_kwargs={"comment": "Datum početka projekta."},
     )
 
     projekat_kraj_datum: date | None = Field(
         default=None,
         description="Datum završetka projekta.",
+        sa_column_kwargs={"comment": "Datum završetka projekta."},
     )
 
     pov_mag: NonNegativeFloat | None = Field(
@@ -322,6 +218,7 @@ class Projekat(SQLModel, table=True):
         description="Ugovorena površina za geomagnetsko snimanje",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
+            comment="Ugovorena površina za geomagnetsko snimanje",
         ),
     )
 
@@ -330,6 +227,7 @@ class Projekat(SQLModel, table=True):
         description="Ukupna snimljena površina za geomagnetsko snimanje",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
+            comment="Ukupna snimljena površina za geomagnetsko snimanje",
         ),
     )
 
@@ -338,6 +236,7 @@ class Projekat(SQLModel, table=True):
         description="Ugovorena površina za georadarsko snimanje",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
+            comment="Ugovorena površina za georadarsko snimanje",
         ),
     )
 
@@ -346,6 +245,7 @@ class Projekat(SQLModel, table=True):
         description="Ukupna snimljena površina za georadarsko snimanje",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
+            comment="Ukupna snimljena površina za georadarsko snimanje",
         ),
     )
 
@@ -354,41 +254,7 @@ class Projekat(SQLModel, table=True):
         description="ID investitora.",
         foreign_key="investitori.investitor_id",
         index=True,
-    )
-
-
-class ProjekatEkipa(SQLModel, table=True):
-    """Many-to-many veza između Projekat i Ekipa."""
-
-    model_config: SQLModelConfig = default_model_config
-    __tablename__: str = "projekat_ekipa"
-
-    projekat_id: int | None = Field(
-        default=None,
-        description="Primary key tabele polja_gpr.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="projekti.projekat_id",
-                onupdate="CASCADE",
-                ondelete="CASCADE",
-            ),
-            primary_key=True,
-        ),
-    )
-
-    ekipa_id: int | None = Field(
-        default=None,
-        description="Primary key tabele ekipa.",
-        sa_column=Column(
-            Integer,
-            ForeignKey(
-                column="ekipa.ekipa_id",
-                onupdate="CASCADE",
-                ondelete="RESTRICT",
-            ),
-            primary_key=True,
-        ),
+        sa_column_kwargs={"comment": "ID investitora."},
     )
 
 
@@ -397,11 +263,13 @@ class Proizvodjac(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "proizvodjaci"
+    __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
     proizvodjac_id: int | None = Field(
         default=None,
         description="ID proizvođača.",
         primary_key=True,
+        sa_column_kwargs={"comment": "ID proizvođača."},
     )
 
     proizvodjac_naziv: str = Field(
@@ -409,12 +277,14 @@ class Proizvodjac(SQLModel, table=True):
         max_length=255,
         unique=True,
         index=True,
+        sa_column_kwargs={"comment": "Naziv proizvođača."},
     )
 
-    proizvodjac_zemlja: str | None = Field(
+    proizvodjac_drzava: str | None = Field(
         default=None,
-        description="Zemlja proizvođača.",
+        description="Država proizvođača.",
         max_length=255,
+        sa_column_kwargs={"comment": "Država proizvođača."},
     )
 
 
@@ -423,11 +293,13 @@ class Podesavanje(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "podesavanja"
+    __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
     settings_id: int | None = Field(
         default=None,
         description="ID podešavanja.",
         primary_key=True,
+        sa_column_kwargs={"comment": "ID podešavanja."},
     )
 
     projekat_id: int = Field(
@@ -437,6 +309,7 @@ class Podesavanje(SQLModel, table=True):
             ForeignKey(column="projekti.projekat_id", ondelete="CASCADE"),
             nullable=False,
             index=True,
+            comment="ID projekta.",
         ),
     )
 
@@ -448,6 +321,7 @@ class Podesavanje(SQLModel, table=True):
             type_=String(length=20),
             nullable=True,
             server_default=text(text="'GrayScale'"),
+            comment="Color rampa za Surfer.",
         ),
     )
 
@@ -458,6 +332,7 @@ class Podesavanje(SQLModel, table=True):
             type_=Numeric(precision=5, scale=2, asdecimal=False),
             nullable=True,
             server_default=text(text="-6.0"),
+            comment="Minimalna vrednost za color rampu.",
         ),
     )
 
@@ -468,6 +343,7 @@ class Podesavanje(SQLModel, table=True):
             type_=Numeric(precision=5, scale=2, asdecimal=False),
             nullable=True,
             server_default=text(text="6.0"),
+            comment="Maksimalna vrednost za color rampu.",
         ),
     )
 
@@ -475,9 +351,10 @@ class Podesavanje(SQLModel, table=True):
         default=0.2,
         description="Veličina ćelije za interpolaciju u Surferu.",
         sa_column=Column(
-            type_=Numeric(precision=2, scale=2, asdecimal=False),
+            type_=Numeric(precision=3, scale=2, asdecimal=False),
             nullable=True,
             server_default=text(text="0.2"),
+            comment="Veličina ćelije za interpolaciju u Surferu.",
         ),
     )
 
@@ -488,6 +365,7 @@ class Podesavanje(SQLModel, table=True):
             type_=Integer,
             nullable=True,
             server_default=text(text="300"),
+            comment="Broj skenova po metru za georadar.",
         ),
     )
 
@@ -498,6 +376,7 @@ class Podesavanje(SQLModel, table=True):
             type_=Integer,
             nullable=True,
             server_default=text(text="100"),
+            comment="Broj skenova po sekundi za georadar.",
         ),
     )
 
@@ -505,15 +384,19 @@ class Podesavanje(SQLModel, table=True):
         default_factory=list,
         description="Lista vrednosti pojačanja za georadar.",
         sa_column=Column(
-            type_=PG_ARRAY(item_type=Integer),
+            type_=postgresql.ARRAY(item_type=Integer),
             nullable=True,
+            comment="Lista vrednosti pojačanja za georadar.",
         ),
     )
 
     dubina_gain: dict[str, str] | None = Field(
         default_factory=dict,
         description="Rečnik sa dubinama i odgovarajućim pojačanjem za georadar.",
-        sa_column=Column(type_=HSTORE),
+        sa_column=Column(
+            type_=postgresql.HSTORE,
+            comment="Rečnik sa dubinama i odgovarajućim pojačanjem za georadar.",
+        ),
     )
 
 
@@ -522,34 +405,41 @@ class Magnetometar(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "magnetometri"
+    __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
     mag_id: int | None = Field(
         default=None,
         description="ID magnetometra.",
         primary_key=True,
+        sa_column_kwargs={"comment": "ID magnetometra."},
     )
+
     mag_naziv: str = Field(
-        description="Naziv magnetometra.",
+        description="Interni naziv magnetometra.",
         max_length=255,
         unique=True,
         index=True,
+        sa_column_kwargs={"comment": "Interni naziv magnetometra."},
     )
 
     mag_serijski_broj: PositiveInt = Field(
         description="Serijski broj magnetometra.",
         unique=True,
+        sa_column_kwargs={"comment": "Serijski broj magnetometra."},
     )
 
     mag_model: str | None = Field(
         default=None,
         description="Model magnetometra.",
         max_length=255,
+        sa_column_kwargs={"comment": "Model magnetometra."},
     )
 
-    mag_proizvodjac_id: int = Field(
+    mag_proizvodjac_id: PositiveInt = Field(
         description="ID proizvođača magnetometra.",
         foreign_key="proizvodjaci.proizvodjac_id",
         index=True,
+        sa_column_kwargs={"comment": "ID proizvođača magnetometra."},
     )
 
 
@@ -558,11 +448,13 @@ class GeoRadar(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "georadari"
+    __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
     gpr_id: int | None = Field(
         default=None,
         description="ID georadara.",
         primary_key=True,
+        sa_column_kwargs={"comment": "ID georadara."},
     )
 
     gpr_naziv: str = Field(
@@ -570,18 +462,21 @@ class GeoRadar(SQLModel, table=True):
         max_length=255,
         unique=True,
         index=True,
+        sa_column_kwargs={"comment": "Naziv georadara."},
     )
 
     gpr_serijski_broj: str | None = Field(
         default=None,
         description="Serijski broj georadara.",
         unique=True,
+        sa_column_kwargs={"comment": "Serijski broj georadara."},
     )
 
     gpr_model: str | None = Field(
         default=None,
         description="Model georadara.",
         max_length=255,
+        sa_column_kwargs={"comment": "Model georadara."},
     )
 
     gpr_proizvodjac_id: int | None = Field(
@@ -589,6 +484,7 @@ class GeoRadar(SQLModel, table=True):
         description="ID proizvođača georadara.",
         foreign_key="proizvodjaci.proizvodjac_id",
         index=True,
+        sa_column_kwargs={"comment": "ID proizvođača georadara."},
     )
 
 
@@ -597,41 +493,55 @@ class Antena(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "antene"
-    __table_args__: tuple[CheckConstraint] = (ck_antena_frekvencija_positive,)
+    __table_args__: tuple[
+        CheckConstraint,
+        dict[str, str],
+    ] = (
+        ck_antena_frekvencija_positive,
+        {"comment": str(object=__doc__)},
+    )
 
     antena_id: int | None = Field(
         default=None,
         description="ID antene.",
         primary_key=True,
+        sa_column_kwargs={"comment": "ID antene."},
     )
+
     antena_naziv: str = Field(
         description="Naziv antene.",
         max_length=255,
         unique=True,
         index=True,
+        sa_column_kwargs={"comment": "Naziv antene."},
     )
+
     antena_serijski_broj: str | None = Field(
         default=None,
-        description="Serijski broj antene georadara.",
+        description="Serijski broj antene.",
         unique=True,
+        sa_column_kwargs={"comment": "Serijski broj antene."},
     )
 
     antena_model: str | None = Field(
         default=None,
-        description="Model georadara.",
+        description="Model antene.",
         max_length=255,
+        sa_column_kwargs={"comment": "Model antene."},
     )
 
     antena_proizvodjac_id: int | None = Field(
         default=None,
-        description="ID proizvođača antene georadara.",
+        description="ID proizvođača antene.",
         foreign_key="proizvodjaci.proizvodjac_id",
         index=True,
+        sa_column_kwargs={"comment": "ID proizvođača antene."},
     )
 
     antena_frekvencija: PositiveInt | None = Field(
         default=None,
         description="Frekvencija antene georadara u MHz.",
+        sa_column_kwargs={"comment": "Frekvencija antene georadara u MHz."},
     )
 
 
@@ -640,17 +550,25 @@ class PovrsinaPoDatumu(SQLModel, table=True):
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "povrsine_po_datumu"
-    __table_args__: tuple[UniqueConstraint] = (uq_projekat_datum,)
+    __table_args__: tuple[
+        UniqueConstraint,
+        dict[str, str],
+    ] = (
+        uq_projekat_datum,
+        {"comment": str(object=__doc__)},
+    )
 
     pov_id: int | None = Field(
         default=None,
         description="ID površine snimanja.",
         primary_key=True,
+        sa_column_kwargs={"comment": "ID površine snimanja."},
     )
 
     datum: date | None = Field(
         default=None,
         description="Datum snimanja.",
+        sa_column_kwargs={"comment": "Datum snimanja."},
     )
 
     projekat_id: int = Field(
@@ -660,36 +578,43 @@ class PovrsinaPoDatumu(SQLModel, table=True):
             ForeignKey(column="projekti.projekat_id", ondelete="CASCADE"),
             nullable=False,
             index=True,
+            comment="ID projekta.",
         ),
     )
 
     pov_mag: NonNegativeFloat | None = Field(
         default=None,
-        description="Površina snimljena magnetometrom.",
+        description="Dnevna površina snimljena magnetometrom.",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
+            comment="Dnevna površina snimljena magnetometrom.",
         ),
     )
 
     pov_gpr: NonNegativeFloat | None = Field(
         default=None,
-        description="Površina snimljena georadarom.",
+        description="Dnevna površina snimljena georadarom.",
         sa_column=Column(
             type_=Numeric(precision=10, scale=3, asdecimal=False),
+            comment="Dnevna površina snimljena georadarom.",
         ),
     )
 
 
 class Nula(SQLModel, table=True):
-    """Tabela normalizovanih koordinata vertikala pravougaonika."""
+    """Tabela nula."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "nule"
+    __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
     nule_id: int | None = Field(
         default=None,
-        description="ID vertikala.",
+        description="ID nule.",
+        ge=1,
+        le=4,
         primary_key=True,
+        sa_column_kwargs={"comment": "ID nule."},
     )
 
     nule_naziv: str = Field(
@@ -697,4 +622,5 @@ class Nula(SQLModel, table=True):
         max_length=5,
         unique=True,
         index=True,
+        sa_column_kwargs={"comment": "Nula - početak snimanja."},
     )
