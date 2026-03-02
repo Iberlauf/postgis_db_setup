@@ -1,6 +1,6 @@
 """Init."""
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, TypeVar
 
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import Session, SQLModel
@@ -46,6 +46,8 @@ if TYPE_CHECKING:
     from sqlalchemy.dialects.postgresql.dml import Insert
     from sqlalchemy.sql.schema import Table
 
+T = TypeVar("T", bound=SQLModel)
+
 tables_to_drop: list[Table] = [
     t for t in SQLModel.metadata.sorted_tables if t.name != "spatial_ref_sys"
 ]
@@ -55,6 +57,33 @@ insert_epsg_3855: Insert = (
     .values(epsg_3855)
     .on_conflict_do_nothing(index_elements=["srid"])
 )
+
+
+def create_instances[T: SQLModel](
+    model_class: type[T],
+    defaults: list[dict[str, int | str]],
+) -> list[T]:
+    """Create validated SQLModel instances from a list of default value mappings.
+
+    Each dictionary in ``defaults`` is validated against ``model_class`` using
+    ``model_validate`` with ``strict=True`` and ``from_attributes=True``,
+    ensuring full type validation and no coercion.
+
+    Args:
+        model_class: The SQLModel subclass to instantiate.
+        defaults: A list of dictionaries containing field values for the model.
+
+    Returns:
+        A list of validated instances of type ``T``.
+
+    Raises:
+        ValidationError: If any of the provided dictionaries fail validation.
+
+    """
+    return [
+        model_class.model_validate(obj=data, strict=True, from_attributes=True)
+        for data in defaults
+    ]
 
 
 def create_db_and_tables(engine: Engine) -> None:
@@ -80,7 +109,7 @@ def populate_defaults(engine: Engine) -> None:
         engine (Engine): SQLAlchemy engine.
 
     """
-    defaults_mapping: list[tuple[type[SQLModel], list[dict[str, Any]]]] = [
+    defaults_mapping: list[tuple[type[SQLModel], list[dict[str, int | str]]]] = [
         (Ekipa, ekipa_defaults),
         (Proizvodjac, proizvodjac_defaults),
         (Magnetometar, magnetometar_defaults),
@@ -93,10 +122,10 @@ def populate_defaults(engine: Engine) -> None:
 
     with Session(bind=engine) as session:
         for model_class, defaults in defaults_mapping:
-            instances: list = [
-                model_class.model_validate(obj=data, strict=True, from_attributes=True)
-                for data in defaults
-            ]
+            instances: list = create_instances(
+                model_class=model_class,
+                defaults=defaults,
+            )
 
             session.add_all(instances=instances)
             session.commit()
