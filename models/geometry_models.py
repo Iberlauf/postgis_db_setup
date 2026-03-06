@@ -2,14 +2,14 @@
 
 from datetime import date  # noqa: TC003
 
-from geoalchemy2 import Geometry
+from geoalchemy2 import Geometry, Raster
 from geoalchemy2.functions import (
     ST_X,
     ST_Y,
     ST_Area,
     ST_Length,
 )
-from pydantic import (  # noqa: TC002
+from pydantic import (
     NonNegativeFloat,
     NonNegativeInt,
     PositiveFloat,
@@ -21,7 +21,6 @@ from sqlmodel import (
     Boolean,
     CheckConstraint,
     Double,
-    Enum,
     Field,
     Index,
     Integer,
@@ -32,8 +31,9 @@ from sqlmodel import (
     literal_column,
     text,
 )
-from sqlmodel._compat import SQLModelConfig  # noqa: TC002
+from sqlmodel._compat import SQLModelConfig
 
+from defaults import default_model_config
 from models.constraints import (
     ck_all_positive,
     ck_file_name_format_gpr,
@@ -44,7 +44,7 @@ from models.constraints import (
     ck_rectangular_polygon,
     ck_right_angles,
     ck_snimak_broj,
-    default_model_config,
+    dsm_rasteri_st_convexhull_idx,
     uq_projekat_polje_concat_gpr,
     uq_projekat_polje_concat_mag,
     uq_projekat_profil_concat_gpr,
@@ -52,18 +52,19 @@ from models.constraints import (
 )
 from models.enums import (
     GeomType,
+    NacinSnimanja,
     NacinSnimanjaEnum,
 )
 
 
-class Tacke(SQLModel, table=True):
+class Tacka(SQLModel, table=True):
     """Tabela tačaka."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "tacke"
     __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
-    tacka_id: int | None = Field(
+    tacka_id: PositiveInt | None = Field(
         default=None,
         description="ID tačke.",
         primary_key=True,
@@ -133,8 +134,8 @@ class Tacke(SQLModel, table=True):
     )
 
 
-class PoljaMag(SQLModel, table=True):
-    """PoljaMag."""
+class PoljeMag(SQLModel, table=True):
+    """PoljeMag."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "polja_mag"
@@ -158,7 +159,7 @@ class PoljaMag(SQLModel, table=True):
         {"comment": str(object=__doc__)},
     )
 
-    polje_id: int | None = Field(
+    polje_id: PositiveInt | None = Field(
         default=None,
         description="ID polja.",
         primary_key=True,
@@ -197,7 +198,7 @@ class PoljaMag(SQLModel, table=True):
                             text="polje_naziv",
                             type_=String,
                         ),
-                        r"\d+",
+                        (r"\d+"),
                     ),
                     type_=Integer,
                 ),
@@ -241,6 +242,14 @@ class PoljaMag(SQLModel, table=True):
         ),
     )
 
+    lokacija_id: PositiveInt | None = Field(
+        default=None,
+        description="ID lokacije.",
+        foreign_key="lokacije.lokacija_id",
+        index=True,
+        sa_column_kwargs={"comment": "Lokacija na kojoj je snimljeno polje."},
+    )
+
     podloga: str | None = Field(
         default=None,
         description="Podloga po kojoj je polje snimljeno.",
@@ -252,7 +261,7 @@ class PoljaMag(SQLModel, table=True):
         default=0.0,
         description="Podešavanje Z-vrednosti.",
         sa_column=Column(
-            type_=Numeric(precision=5, scale=2, asdecimal=False),
+            type_=Numeric(precision=6, scale=2, asdecimal=False),
             server_default=text(text="0.0"),
             nullable=False,
             comment="Podešavanje Z-vrednosti.",
@@ -282,19 +291,13 @@ class PoljaMag(SQLModel, table=True):
         default=None,
         description="Površina polja magnetometra (sa uračunatim preklapanjem).",
         sa_column=Column(
-            Numeric(precision=8, scale=3, asdecimal=False),
+            Numeric(precision=10, scale=3, asdecimal=False),
             Computed(
-                sqltext=func.round(
-                    cast(
-                        expression=ST_Area(
-                            literal_column(
-                                text="geom",
-                                type_=Geometry,
-                            ),
-                        ),
-                        type_=Numeric(precision=10, scale=3, asdecimal=False),
+                sqltext=ST_Area(
+                    literal_column(
+                        text="geom",
+                        type_=Geometry,
                     ),
-                    3,
                 ),
                 persisted=True,
             ),
@@ -359,8 +362,8 @@ class PoljaMag(SQLModel, table=True):
     )
 
 
-class PoljaGpr(SQLModel, table=True):
-    """PoljaGPR."""
+class PoljeGpr(SQLModel, table=True):
+    """PoljeGPR."""
 
     model_config: SQLModelConfig = default_model_config
 
@@ -381,7 +384,7 @@ class PoljaGpr(SQLModel, table=True):
         {"comment": str(object=__doc__)},
     )
 
-    polje_id: int | None = Field(
+    polje_id: PositiveInt | None = Field(
         default=None,
         description="ID polja.",
         primary_key=True,
@@ -420,7 +423,7 @@ class PoljaGpr(SQLModel, table=True):
                             text="polje_naziv",
                             type_=String,
                         ),
-                        r"\d+",
+                        (r"\d+"),
                     ),
                     type_=Integer,
                 ),
@@ -455,6 +458,14 @@ class PoljaGpr(SQLModel, table=True):
         ),
     )
 
+    lokacija_id: PositiveInt | None = Field(
+        default=None,
+        description="ID lokacije.",
+        foreign_key="lokacije.lokacija_id",
+        index=True,
+        sa_column_kwargs={"comment": "Lokacija na kojoj je snimljeno polje."},
+    )
+
     podloga: str | None = Field(
         default=None,
         description="Podloga po kojoj je polje snimljeno.",
@@ -476,13 +487,15 @@ class PoljaGpr(SQLModel, table=True):
         sa_column_kwargs={"comment": "ID antene."},
     )
 
-    nacin_snimanja: Enum = Field(
-        default="kolica",
+    nacin_snimanja: NacinSnimanja = Field(
+        default=NacinSnimanja.KOLICA,
         description="Način snimanja.",
         sa_column=Column(
             type_=NacinSnimanjaEnum,
             nullable=False,
-            server_default=text(text="'kolica'"),
+            server_default=text(
+                text=f"'{NacinSnimanja.KOLICA.value}'",
+            ),
             comment="Način snimanja.",
         ),
     )
@@ -491,15 +504,9 @@ class PoljaGpr(SQLModel, table=True):
         default=None,
         description="Površina polja georadara (sa uračunatim preklapanjem).",
         sa_column=Column(
-            Numeric(precision=8, scale=3, asdecimal=False),
+            Numeric(precision=10, scale=3, asdecimal=False),
             Computed(
-                sqltext=func.round(
-                    cast(
-                        expression=ST_Area(literal_column(text="geom", type_=Geometry)),
-                        type_=Numeric(precision=10, scale=3, asdecimal=False),
-                    ),
-                    3,
-                ),
+                sqltext=ST_Area(literal_column(text="geom", type_=Geometry)),
                 persisted=True,
             ),
             comment="Površina polja georadara (sa uračunatim preklapanjem).",
@@ -548,7 +555,7 @@ class PoljaGpr(SQLModel, table=True):
 
 
 class ProfilMag(SQLModel, table=True):
-    """ProfiliMag."""
+    """ProfilMag."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "profili_mag"
@@ -566,7 +573,7 @@ class ProfilMag(SQLModel, table=True):
         {"comment": str(object=__doc__)},
     )
 
-    profil_id: int | None = Field(
+    profil_id: PositiveInt | None = Field(
         default=None,
         description="ID profila.",
         primary_key=True,
@@ -614,6 +621,14 @@ class ProfilMag(SQLModel, table=True):
         sa_column_kwargs={"comment": "ID člana ekipe koji je snimio profil."},
     )
 
+    lokacija_id: PositiveInt | None = Field(
+        default=None,
+        description="ID lokacije.",
+        foreign_key="lokacije.lokacija_id",
+        index=True,
+        sa_column_kwargs={"comment": "Lokacija na kojoj je snimljen profil."},
+    )
+
     podloga: str | None = Field(
         default=None,
         description="Podloga snimanja.",
@@ -625,7 +640,7 @@ class ProfilMag(SQLModel, table=True):
         default=0.0,
         description="Podešavanje Z-vrednosti.",
         sa_column=Column(
-            type_=Numeric(precision=5, scale=2, asdecimal=False),
+            type_=Numeric(precision=6, scale=2, asdecimal=False),
             server_default=text(text="0.0"),
             nullable=False,
             comment="Podešavanje Z-vrednosti.",
@@ -648,8 +663,9 @@ class ProfilMag(SQLModel, table=True):
         sa_column=Column(
             Integer,
             Computed(
-                sqltext=func.round(
-                    ST_Length(literal_column(text="geom", type_=Geometry)),
+                sqltext=cast(
+                    expression=ST_Length(literal_column(text="geom", type_=Geometry)),
+                    type_=Integer,
                 ),
                 persisted=True,
             ),
@@ -672,7 +688,7 @@ class ProfilMag(SQLModel, table=True):
 
 
 class ProfilGpr(SQLModel, table=True):
-    """ProfiliGPR."""
+    """ProfilGPR."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "profili_gpr"
@@ -688,7 +704,7 @@ class ProfilGpr(SQLModel, table=True):
         {"comment": str(object=__doc__)},
     )
 
-    profil_id: int | None = Field(
+    profil_id: PositiveInt | None = Field(
         default=None,
         description="ID profila.",
         primary_key=True,
@@ -722,6 +738,14 @@ class ProfilGpr(SQLModel, table=True):
         sa_column_kwargs={"comment": "ID projekta."},
     )
 
+    lokacija_id: PositiveInt | None = Field(
+        default=None,
+        description="ID lokacije.",
+        foreign_key="lokacije.lokacija_id",
+        index=True,
+        sa_column_kwargs={"comment": "Lokacija na kojoj je snimljen profil."},
+    )
+
     podloga: str | None = Field(
         default=None,
         description="Podloga snimanja.",
@@ -752,13 +776,15 @@ class ProfilGpr(SQLModel, table=True):
         ),
     )
 
-    nacin_snimanja: Enum = Field(
-        default="kolica",
+    nacin_snimanja: NacinSnimanja = Field(
+        default=NacinSnimanja.KOLICA,
         description="Način snimanja.",
         sa_column=Column(
             type_=NacinSnimanjaEnum,
             nullable=False,
-            server_default=text(text="'kolica'"),
+            server_default=text(
+                text=f"'{NacinSnimanja.KOLICA.value}'",
+            ),
             comment="Način snimanja.",
         ),
     )
@@ -769,8 +795,9 @@ class ProfilGpr(SQLModel, table=True):
         sa_column=Column(
             Integer,
             Computed(
-                sqltext=func.round(
-                    ST_Length(literal_column(text="geom", type_=Geometry)),
+                sqltext=cast(
+                    expression=ST_Length(literal_column(text="geom", type_=Geometry)),
+                    type_=Integer,
                 ),
                 persisted=True,
             ),
@@ -788,5 +815,206 @@ class ProfilGpr(SQLModel, table=True):
                 spatial_index=True,
             ),
             comment="Geometrijska kolona.",
+        ),
+    )
+
+
+class PoljeElektrika(SQLModel):
+    """PoljeElektrika."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "polja_elektrika"
+    __table_args__: tuple[CheckConstraint, dict[str, str]] = (
+        ck_polje_naziv_format,
+        {"comment": str(object=__doc__)},
+    )
+
+    polje_id: PositiveInt | None = Field(
+        default=None,
+        description="ID polja.",
+        primary_key=True,
+        sa_column_kwargs={"comment": "ID polja."},
+    )
+
+    polje_naziv: str = Field(
+        description="Naziv polja.",
+        max_length=255,
+        index=True,
+        sa_column_kwargs={"comment": "Naziv polja."},
+    )
+
+    datum: date | None = Field(
+        default=None,
+        description="Datum snimanja.",
+        sa_column_kwargs={"comment": "Datum snimanja."},
+    )
+
+    broj_polja: PositiveInt | None = Field(
+        default=None,
+        description="Broj polja; dobijen iz naziva polja.",
+        sa_column=Column(
+            Integer,
+            Computed(
+                sqltext=cast(
+                    expression=func.substring(
+                        literal_column(
+                            text="polje_naziv",
+                            type_=String,
+                        ),
+                        (r"\d+"),
+                    ),
+                    type_=Integer,
+                ),
+                persisted=True,
+            ),
+            comment="Broj polja; dobijen iz naziva polja.",
+        ),
+    )
+
+    projekat_id: PositiveInt = Field(
+        description="ID projekta.",
+        foreign_key="projekti.projekat_id",
+        index=True,
+        sa_column_kwargs={"comment": "ID projekta."},
+    )
+
+    nule_id: PositiveInt = Field(
+        description="Početak snimanja.",
+        ge=1,
+        le=4,
+        foreign_key="nule.nule_id",
+        index=True,
+        sa_column_kwargs={"comment": "Početak snimanja."},
+    )
+
+    lokacija_id: PositiveInt | None = Field(
+        default=None,
+        description="ID lokacije.",
+        foreign_key="lokacije.lokacija_id",
+        index=True,
+        sa_column_kwargs={"comment": "Lokacija na kojoj je snimljeno polje."},
+    )
+
+    podloga: str | None = Field(
+        default=None,
+        description="Podloga po kojoj je polje snimljeno.",
+        max_length=255,
+        sa_column_kwargs={"comment": "Podloga po kojoj je polje snimljeno."},
+    )
+
+
+class PoljeProfiler(SQLModel):
+    """PoljeProfiler."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "polja_profiler"
+    __table_args__: tuple[CheckConstraint, dict[str, str]] = (
+        ck_polje_naziv_format,
+        {"comment": str(object=__doc__)},
+    )
+
+    polje_id: PositiveInt | None = Field(
+        default=None,
+        description="ID polja.",
+        primary_key=True,
+        sa_column_kwargs={"comment": "ID polja."},
+    )
+
+    polje_naziv: str = Field(
+        description="Naziv polja.",
+        max_length=255,
+        index=True,
+        sa_column_kwargs={"comment": "Naziv polja."},
+    )
+
+    datum: date | None = Field(
+        default=None,
+        description="Datum snimanja.",
+        sa_column_kwargs={"comment": "Datum snimanja."},
+    )
+
+    broj_polja: PositiveInt | None = Field(
+        default=None,
+        description="Broj polja; dobijen iz naziva polja.",
+        sa_column=Column(
+            Integer,
+            Computed(
+                sqltext=cast(
+                    expression=func.substring(
+                        literal_column(
+                            text="polje_naziv",
+                            type_=String,
+                        ),
+                        (r"\d+"),
+                    ),
+                    type_=Integer,
+                ),
+                persisted=True,
+            ),
+            comment="Broj polja; dobijen iz naziva polja.",
+        ),
+    )
+
+    projekat_id: PositiveInt = Field(
+        description="ID projekta.",
+        foreign_key="projekti.projekat_id",
+        index=True,
+        sa_column_kwargs={"comment": "ID projekta."},
+    )
+
+    nule_id: PositiveInt = Field(
+        description="Početak snimanja.",
+        ge=1,
+        le=4,
+        foreign_key="nule.nule_id",
+        index=True,
+        sa_column_kwargs={"comment": "Početak snimanja."},
+    )
+
+    lokacija_id: PositiveInt | None = Field(
+        default=None,
+        description="ID lokacije.",
+        foreign_key="lokacije.lokacija_id",
+        index=True,
+        sa_column_kwargs={"comment": "Lokacija na kojoj je snimljeno polje."},
+    )
+
+    podloga: str | None = Field(
+        default=None,
+        description="Podloga po kojoj je polje snimljeno.",
+        max_length=255,
+        sa_column_kwargs={"comment": "Podloga po kojoj je polje snimljeno."},
+    )
+
+
+class DsmRaster(SQLModel, table=True):
+    """DsmRaster."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "dsm_rasteri"
+    __table_args__: tuple[
+        Index,
+        dict[str, str],
+    ] = (
+        dsm_rasteri_st_convexhull_idx,
+        {"comment": str(object=__doc__)},
+    )
+
+    rid: PositiveInt | None = Field(
+        default=None,
+        description="ID rastera.",
+        primary_key=True,
+        sa_column_kwargs={"comment": "ID rastera."},
+    )
+
+    rast: Raster = Field(
+        default=None,
+        description="Raster.",
+        sa_column=Column(
+            type_=Raster(
+                spatial_index=True,
+            ),
+            nullable=True,
+            comment="Raster.",
         ),
     )

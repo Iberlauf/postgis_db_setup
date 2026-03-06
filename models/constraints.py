@@ -2,9 +2,10 @@
 
 from typing import TYPE_CHECKING, Any
 
-from geoalchemy2 import Geometry
+from geoalchemy2 import Geometry, Raster
 from geoalchemy2.functions import (
     ST_Area,
+    ST_ConvexHull,
     ST_NPoints,
     ST_OrientedEnvelope,
 )
@@ -22,22 +23,17 @@ from sqlmodel import (
     literal_column,
     or_,
 )
-from sqlmodel._compat import SQLModelConfig  # noqa: TC002
 
 if TYPE_CHECKING:
     from datetime import date
 
     from sqlalchemy import BinaryExpression, ColumnClause
 
-default_model_config: SQLModelConfig = {
-    "arbitrary_types_allowed": True,
-    "extra": "ignore",
-    "from_attributes": True,
-    "use_enum_values": True,
-}
 
 # Reusable column references
+
 _geom: ColumnClause[Geometry] = literal_column(text="geom", type_=Geometry)
+_rast: ColumnClause[Raster] = literal_column(text="rast", type_=Raster)
 _polje_naziv: ColumnClause[str] = literal_column(text="polje_naziv", type_=String)
 _profil_naziv: ColumnClause[str] = literal_column(text="profil_naziv", type_=String)
 _file_name: ColumnClause[str] = literal_column(text="file_name", type_=String)
@@ -66,7 +62,6 @@ _investitor_maticni_broj: ColumnClause[str] = literal_column(
 )
 _snimak_broj: ColumnClause[int] = literal_column(text="snimak_broj", type_=Integer)
 _nule_id: ColumnClause[int] = literal_column(text="nule_id", type_=Integer)
-
 
 # Indexes
 
@@ -116,6 +111,13 @@ uq_projekat_profil_concat_gpr: Index = Index(
     "uq_projekat_profil_concat_gpr",
     _concat_id_name(name_col=_profil_naziv),
     unique=True,
+)
+
+dsm_rasteri_st_convexhull_idx: Index = Index(
+    "dsm_rasteri_st_convexhull_idx",
+    ST_ConvexHull(_rast),
+    postgresql_using="gist",
+    postgresql_with={"fillfactor": 90, "buffering": "auto"},
 )
 
 # UniqueConstraints

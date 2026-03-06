@@ -5,26 +5,18 @@ from typing import TYPE_CHECKING, TypeVar
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import Session, SQLModel
 
-from default_values import (
-    antena_defaults,
-    ekipa_defaults,
-    georadar_defaults,
-    investitor_defaults,
-    magnetometar_defaults,
-    proizvodjac_defaults,
-    projekat_defaults,
-)
-from mandatory_defaults import (
+from mandatory_default_values import (
     epsg_3855,
     nule_defaults,
 )
 from models.enums import NacinSnimanjaEnum
 from models.geometry_models import (
-    PoljaGpr,
-    PoljaMag,
+    DsmRaster,
+    PoljeGpr,
+    PoljeMag,
     ProfilGpr,
     ProfilMag,
-    Tacke,
+    Tacka,
 )
 from models.non_geo_models import (
     Antena,
@@ -40,6 +32,15 @@ from models.non_geo_models import (
     SpatialRefSys,
 )
 from sql_statements import first_sql_statements
+from testing_default_values import (
+    antena_defaults,
+    ekipa_defaults,
+    georadar_defaults,
+    investitor_defaults,
+    magnetometar_defaults,
+    proizvodjac_defaults,
+    projekat_defaults,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy import Engine
@@ -49,7 +50,9 @@ if TYPE_CHECKING:
 T = TypeVar("T", bound=SQLModel)
 
 tables_to_drop: list[Table] = [
-    t for t in SQLModel.metadata.sorted_tables if t.name != "spatial_ref_sys"
+    t
+    for t in SQLModel.metadata.sorted_tables
+    if t.name not in (SpatialRefSys.__tablename__, DsmRaster.__tablename__)
 ]
 
 insert_epsg_3855: Insert = (
@@ -135,6 +138,7 @@ def populate_defaults(engine: Engine) -> None:
 
 __all__: list[str] = [
     "Antena",
+    "DsmRaster",
     "Ekipa",
     "GeoRadar",
     "Investitor",
@@ -142,14 +146,14 @@ __all__: list[str] = [
     "NacinSnimanjaEnum",
     "Nula",
     "Podesavanje",
-    "PoljaGpr",
-    "PoljaMag",
+    "PoljeGpr",
+    "PoljeMag",
     "PovrsinaPoDatumu",
     "ProfilGpr",
     "ProfilMag",
     "Proizvodjac",
     "Projekat",
-    "Tacke",
+    "Tacka",
     "create_db_and_tables",
     "populate_defaults",
 ]

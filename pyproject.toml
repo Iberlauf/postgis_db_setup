@@ -1,7 +1,7 @@
 [project]
 name = "postgis-db-setup"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.1.1"
+description = "Postgis DB setup."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
@@ -19,3 +19,6 @@ url = "https://gisidx.github.io/gwi"
 
 [tool.uv.sources]
 gdal = { url = "https://github.com/cgohlke/geospatial-wheels/releases/download/v2026.2.26/gdal-3.12.2-cp314-cp314-win_amd64.whl" }
+
+[tool.ruff.format]
+line-ending = "cr-lf"

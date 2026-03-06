@@ -1,8 +1,8 @@
 """SQL statements."""
 
 from sqlalchemy import DDL, Engine, event, text
-from sqlalchemy.sql.elements import TextClause  # noqa: TC002
-from sqlalchemy.sql.schema import Table  # noqa: TC002
+from sqlalchemy.sql.elements import TextClause
+from sqlalchemy.sql.schema import Table
 from sqlmodel import SQLModel
 
 from config import settings
@@ -71,7 +71,7 @@ BEGIN
                     ));
                     orthometric_height := raster_elevation - geoid_height;
                 EXCEPTION WHEN OTHERS THEN
-                    RAISE WARNING 'EGM2008 grids not found. Using approximate value. Error: %%', SQLERRM;
+                    RAISE WARNING 'EGM2008 grid nije u bazi podataka. Približna vrednost će biti korišćena. Error: %%', SQLERRM;
                     orthometric_height := raster_elevation - 43.0;
                 END;
             END;

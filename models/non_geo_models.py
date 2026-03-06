@@ -2,7 +2,7 @@
 
 from datetime import date  # noqa: TC003
 
-from pydantic import (  # noqa: TC002
+from pydantic import (
     EmailStr,
     NonNegativeFloat,
     PositiveFloat,
@@ -24,16 +24,17 @@ from sqlmodel import (
     literal_column,
     text,
 )
-from sqlmodel._compat import SQLModelConfig  # noqa: TC002
+from sqlmodel._compat import SQLModelConfig
 
+from defaults import default_model_config
 from models.constraints import (
     ck_antena_frekvencija_positive,
     ck_mb_format,
     ck_pib_format,
     ck_projekat_datum_opseg,
-    default_model_config,
     uq_projekat_datum,
 )
+from models.enums import TipMag, TipMagEnum
 
 
 class SpatialRefSys(SQLModel, table=True):
@@ -56,7 +57,7 @@ class Ekipa(SQLModel, table=True):
     __tablename__: str = "ekipa"
     __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
-    ekipa_id: int | None = Field(
+    ekipa_id: PositiveInt | None = Field(
         default=None,
         description="ID člana ekipe.",
         primary_key=True,
@@ -110,7 +111,7 @@ class Investitor(SQLModel, table=True):
         {"comment": str(object=__doc__)},
     )
 
-    investitor_id: int | None = Field(
+    investitor_id: PositiveInt | None = Field(
         default=None,
         description="ID investitora.",
         primary_key=True,
@@ -179,7 +180,7 @@ class Projekat(SQLModel, table=True):
         {"comment": str(object=__doc__)},
     )
 
-    projekat_id: int | None = Field(
+    projekat_id: PositiveInt | None = Field(
         default=None,
         description="ID projekta.",
         primary_key=True,
@@ -249,12 +250,22 @@ class Projekat(SQLModel, table=True):
         ),
     )
 
-    investitor_id: int | None = Field(
+    investitor_id: PositiveInt | None = Field(
         default=None,
         description="ID investitora.",
         foreign_key="investitori.investitor_id",
         index=True,
         sa_column_kwargs={"comment": "ID investitora."},
+    )
+
+    lokacija_id: set[PositiveInt] | None = Field(
+        default_factory=list,
+        description="Set lokacija na kojima se izvode radovi.",
+        sa_column=Column(
+            type_=postgresql.ARRAY(item_type=Integer),
+            nullable=True,
+            comment="Set lokacija na kojima se izvode radovi.",
+        ),
     )
 
 
@@ -265,7 +276,7 @@ class Proizvodjac(SQLModel, table=True):
     __tablename__: str = "proizvodjaci"
     __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
-    proizvodjac_id: int | None = Field(
+    proizvodjac_id: PositiveInt | None = Field(
         default=None,
         description="ID proizvođača.",
         primary_key=True,
@@ -295,14 +306,14 @@ class Podesavanje(SQLModel, table=True):
     __tablename__: str = "podesavanja"
     __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
-    settings_id: int | None = Field(
+    settings_id: PositiveInt | None = Field(
         default=None,
         description="ID podešavanja.",
         primary_key=True,
         sa_column_kwargs={"comment": "ID podešavanja."},
     )
 
-    projekat_id: int = Field(
+    projekat_id: PositiveInt = Field(
         description="ID projekta.",
         sa_column=Column(
             Integer,
@@ -351,7 +362,7 @@ class Podesavanje(SQLModel, table=True):
         default=0.2,
         description="Veličina ćelije za interpolaciju u Surferu.",
         sa_column=Column(
-            type_=Numeric(precision=3, scale=2, asdecimal=False),
+            type_=Numeric(precision=4, scale=2, asdecimal=False),
             nullable=True,
             server_default=text(text="0.2"),
             comment="Veličina ćelije za interpolaciju u Surferu.",
@@ -407,7 +418,7 @@ class Magnetometar(SQLModel, table=True):
     __tablename__: str = "magnetometri"
     __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
-    mag_id: int | None = Field(
+    mag_id: PositiveInt | None = Field(
         default=None,
         description="ID magnetometra.",
         primary_key=True,
@@ -435,6 +446,17 @@ class Magnetometar(SQLModel, table=True):
         sa_column_kwargs={"comment": "Model magnetometra."},
     )
 
+    mag_tip: TipMag = Field(
+        default=TipMag.PROTONSKI_OVERHAUZER,
+        description="Tip magnetometra (tehnologija).",
+        sa_column=Column(
+            type_=TipMagEnum,
+            nullable=False,
+            server_default=text(text=f"'{TipMag.PROTONSKI_OVERHAUZER.value}'"),
+            comment="Tip magnetometra (tehnologija).",
+        ),
+    )
+
     mag_proizvodjac_id: PositiveInt = Field(
         description="ID proizvođača magnetometra.",
         foreign_key="proizvodjaci.proizvodjac_id",
@@ -450,7 +472,7 @@ class GeoRadar(SQLModel, table=True):
     __tablename__: str = "georadari"
     __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
-    gpr_id: int | None = Field(
+    gpr_id: PositiveInt | None = Field(
         default=None,
         description="ID georadara.",
         primary_key=True,
@@ -479,7 +501,7 @@ class GeoRadar(SQLModel, table=True):
         sa_column_kwargs={"comment": "Model georadara."},
     )
 
-    gpr_proizvodjac_id: int | None = Field(
+    gpr_proizvodjac_id: PositiveInt | None = Field(
         default=None,
         description="ID proizvođača georadara.",
         foreign_key="proizvodjaci.proizvodjac_id",
@@ -501,7 +523,7 @@ class Antena(SQLModel, table=True):
         {"comment": str(object=__doc__)},
     )
 
-    antena_id: int | None = Field(
+    antena_id: PositiveInt | None = Field(
         default=None,
         description="ID antene.",
         primary_key=True,
@@ -530,7 +552,7 @@ class Antena(SQLModel, table=True):
         sa_column_kwargs={"comment": "Model antene."},
     )
 
-    antena_proizvodjac_id: int | None = Field(
+    antena_proizvodjac_id: PositiveInt | None = Field(
         default=None,
         description="ID proizvođača antene.",
         foreign_key="proizvodjaci.proizvodjac_id",
@@ -558,7 +580,7 @@ class PovrsinaPoDatumu(SQLModel, table=True):
         {"comment": str(object=__doc__)},
     )
 
-    pov_id: int | None = Field(
+    pov_id: PositiveInt | None = Field(
         default=None,
         description="ID površine snimanja.",
         primary_key=True,
@@ -571,7 +593,7 @@ class PovrsinaPoDatumu(SQLModel, table=True):
         sa_column_kwargs={"comment": "Datum snimanja."},
     )
 
-    projekat_id: int = Field(
+    projekat_id: PositiveInt = Field(
         description="ID projekta.",
         sa_column=Column(
             Integer,
@@ -608,7 +630,7 @@ class Nula(SQLModel, table=True):
     __tablename__: str = "nule"
     __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
 
-    nule_id: int | None = Field(
+    nule_id: PositiveInt | None = Field(
         default=None,
         description="ID nule.",
         ge=1,
@@ -623,4 +645,26 @@ class Nula(SQLModel, table=True):
         unique=True,
         index=True,
         sa_column_kwargs={"comment": "Nula - početak snimanja."},
+    )
+
+
+class Lokacija(SQLModel, table=True):
+    """Tabela lokacija."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "lokacije"
+    __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
+
+    lokacija_id: PositiveInt | None = Field(
+        default=None,
+        description="ID lokacije.",
+        primary_key=True,
+        sa_column_kwargs={"comment": "ID lokacije."},
+    )
+
+    lokacija_naziv: str = Field(
+        description="Naziv lokacije.",
+        unique=True,
+        index=True,
+        sa_column_kwargs={"comment": "Naziv lokacije."},
     )
