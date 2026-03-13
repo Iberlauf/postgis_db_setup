@@ -5,3 +5,5 @@ CREATE EXTENSION IF NOT EXISTS postgis_raster;
 SELECT postgis_extensions_upgrade();
 
 CREATE EXTENSION IF NOT EXISTS hstore;
+
+CREATE EXTENSION IF NOT EXISTS intarray;

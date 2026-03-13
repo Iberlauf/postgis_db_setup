@@ -6,7 +6,11 @@ from sqlmodel import create_engine
 
 from config import settings
 from models import create_db_and_tables, populate_defaults
-from sql_statements import register_immutability_triggers, register_triggers
+from sql_statements import (
+    register_cros_table_ddls,
+    register_immutability_triggers,
+    register_triggers,
+)
 
 if TYPE_CHECKING:
     from sqlalchemy.engine.base import Engine
@@ -18,3 +22,4 @@ if __name__ == "__main__":
     create_db_and_tables(engine=engine)
     populate_defaults(engine=engine)
     register_immutability_triggers(engine=engine)
+    register_cros_table_ddls(engine=engine)

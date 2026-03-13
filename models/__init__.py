@@ -7,6 +7,7 @@ from sqlmodel import Session, SQLModel
 
 from mandatory_default_values import (
     epsg_3855,
+    kolor_rampe,
     nule_defaults,
 )
 from models.enums import NacinSnimanjaEnum
@@ -23,6 +24,8 @@ from models.non_geo_models import (
     Ekipa,
     GeoRadar,
     Investitor,
+    KolorRampa,
+    Lokacija,
     Magnetometar,
     Nula,
     Podesavanje,
@@ -37,6 +40,7 @@ from testing_default_values import (
     ekipa_defaults,
     georadar_defaults,
     investitor_defaults,
+    lokacije_defaults,
     magnetometar_defaults,
     proizvodjac_defaults,
     projekat_defaults,
@@ -113,14 +117,16 @@ def populate_defaults(engine: Engine) -> None:
 
     """
     defaults_mapping: list[tuple[type[SQLModel], list[dict[str, int | str]]]] = [
+        (Nula, nule_defaults),
         (Ekipa, ekipa_defaults),
         (Proizvodjac, proizvodjac_defaults),
         (Magnetometar, magnetometar_defaults),
         (Investitor, investitor_defaults),
         (GeoRadar, georadar_defaults),
         (Antena, antena_defaults),
+        (KolorRampa, kolor_rampe),
         (Projekat, projekat_defaults),
-        (Nula, nule_defaults),
+        (Lokacija, lokacije_defaults),
     ]
 
     with Session(bind=engine) as session:
@@ -142,6 +148,8 @@ __all__: list[str] = [
     "Ekipa",
     "GeoRadar",
     "Investitor",
+    "KolorRampa",
+    "Lokacija",
     "Magnetometar",
     "NacinSnimanjaEnum",
     "Nula",

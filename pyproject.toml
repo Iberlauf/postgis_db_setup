@@ -5,12 +5,13 @@ description = "Postgis DB setup."
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
-    "gdal>=3.11.4",
+    "gdal>=3.12.2",
     "geoalchemy2>=0.18.3",
     "psycopg[binary]>=3.3.2",
     "pydantic-settings>=2.13.1",
     "pydantic[email]>=2.12.5",
     "sqlalchemy>=2.0.46",
+    "sqlalchemy-utils>=0.42.1",
     "sqlmodel>=0.0.37",
 ]
 

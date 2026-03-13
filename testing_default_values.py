@@ -164,3 +164,48 @@ projekat_defaults: list[dict[str, int | str]] = [
         "investitor_id": 1,
     },
 ]
+
+lokacije_defaults: list[dict[str, int | str]] = [
+    {
+        "lokacija_naziv": "Castrum",
+        "projekat_id": 1,
+    },
+    {
+        "lokacija_naziv": "Grad",
+        "projekat_id": 1,
+    },
+    {
+        "lokacija_naziv": "Selište",
+        "projekat_id": 1,
+    },
+    {
+        "lokacija_naziv": "Rit",
+        "projekat_id": 1,
+    },
+    {
+        "lokacija_naziv": "Pirivoj",
+        "projekat_id": 1,
+    },
+    {
+        "lokacija_naziv": "Amfiteatar",
+        "projekat_id": 1,
+    },
+    {
+        "lokacija_naziv": "Humka",
+        "projekat_id": 1,
+    },
+    {
+        "lokacija_naziv": "Nad Klepečkom",
+        "projekat_id": 1,
+    },
+]
+
+profajler_defaults: list[dict[str, int | str]] = [
+    {
+        "profajler_id": 1,
+        "profajler_naziv": "Veslo",
+        "profajler_serijski_broj": "0271",
+        "profajler_model": "EMP-400",
+        "profajler_proizvodjac_id": 2,
+    },
+]

@@ -15,27 +15,35 @@ from pydantic import (
     PositiveFloat,
     PositiveInt,
 )
-from sqlalchemy import Column, Computed, func
+from sqlalchemy import Column, Computed
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.ext.mutable import MutableSet
 from sqlmodel import (
     Boolean,
     CheckConstraint,
     Double,
     Field,
+    ForeignKey,
     Index,
     Integer,
     Numeric,
     SQLModel,
-    String,
     cast,
-    literal_column,
+    false,
     text,
 )
 from sqlmodel._compat import SQLModelConfig
 
-from defaults import default_model_config
+from defaults import (
+    default_geom_dim,
+    default_model_config,
+    srid,
+)
 from models.constraints import (
-    ck_all_positive,
+    _geom,
+    _polje_naziv,
+    ck_all_positive_unique_ekipa_ids,
+    ck_all_positive_unique_pogresni_redovi,
     ck_file_name_format_gpr,
     ck_linestring_two_points,
     ck_nule,
@@ -45,8 +53,10 @@ from models.constraints import (
     ck_right_angles,
     ck_snimak_broj,
     dsm_rasteri_st_convexhull_idx,
+    uq_projekat_polje_concat_elektrika,
     uq_projekat_polje_concat_gpr,
     uq_projekat_polje_concat_mag,
+    uq_projekat_polje_concat_profiler,
     uq_projekat_profil_concat_gpr,
     uq_projekat_profil_concat_mag,
 )
@@ -54,6 +64,8 @@ from models.enums import (
     GeomType,
     NacinSnimanja,
     NacinSnimanjaEnum,
+    SmerSnimanja,
+    SmerSnimanjaEnum,
 )
 
 
@@ -87,10 +99,14 @@ class Tacka(SQLModel, table=True):
         description="X koordinata.",
         sa_column=Column(
             Computed(
-                sqltext=ST_X(literal_column(text="geom", type_=Geometry)),
+                sqltext=ST_X(_geom),
                 persisted=True,
             ),
-            type_=Numeric(precision=10, scale=3, asdecimal=False),
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
             nullable=True,
             comment="X koordinata.",
         ),
@@ -100,10 +116,14 @@ class Tacka(SQLModel, table=True):
         description="Y koordinata.",
         sa_column=Column(
             Computed(
-                sqltext=ST_Y(literal_column(text="geom", type_=Geometry)),
+                sqltext=ST_Y(_geom),
                 persisted=True,
             ),
-            type_=Numeric(precision=10, scale=3, asdecimal=False),
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
             nullable=True,
             comment="Y koordinata.",
         ),
@@ -113,7 +133,11 @@ class Tacka(SQLModel, table=True):
         default=None,
         description="Nadmorska visina.",
         sa_column=Column(
-            type_=Numeric(precision=10, scale=3, asdecimal=False),
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
             nullable=True,
             comment="Nadmorska visina.",
         ),
@@ -124,9 +148,9 @@ class Tacka(SQLModel, table=True):
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(
-                geometry_type=GeomType.POINT,
-                srid=6316,
-                dimension=2,
+                geometry_type=GeomType.POINT.value,
+                srid=srid,
+                dimension=default_geom_dim,
                 spatial_index=True,
             ),
             comment="Geometrijska kolona.",
@@ -135,7 +159,7 @@ class Tacka(SQLModel, table=True):
 
 
 class PoljeMag(SQLModel, table=True):
-    """PoljeMag."""
+    """Tabela polja snimljenih geomagnetskom metodom."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "polja_mag"
@@ -147,15 +171,17 @@ class PoljeMag(SQLModel, table=True):
         CheckConstraint,
         CheckConstraint,
         CheckConstraint,
+        CheckConstraint,
         dict[str, str],
     ] = (
         uq_projekat_polje_concat_mag,
         ck_polje_naziv_format,
-        ck_all_positive,
         ck_snimak_broj,
         ck_nule,
         ck_rectangular_polygon,
         ck_right_angles,
+        ck_all_positive_unique_pogresni_redovi,
+        ck_all_positive_unique_ekipa_ids,
         {"comment": str(object=__doc__)},
     )
 
@@ -193,13 +219,7 @@ class PoljeMag(SQLModel, table=True):
             Integer,
             Computed(
                 sqltext=cast(
-                    expression=func.substring(
-                        literal_column(
-                            text="polje_naziv",
-                            type_=String,
-                        ),
-                        (r"\d+"),
-                    ),
+                    expression=_polje_naziv.op(opstring="~")(r"\d+"),
                     type_=Integer,
                 ),
                 persisted=True,
@@ -232,13 +252,15 @@ class PoljeMag(SQLModel, table=True):
         sa_column_kwargs={"comment": "Početak snimanja."},
     )
 
-    ekipa_ids: set[PositiveInt] | None = Field(
+    ekipa_ids: set[PositiveInt] = Field(
         default_factory=set,
-        description="Set ID-jeva članova ekipe (mesto many-to-many tabele).",
+        description="Set ID-jeva članova ekipe (umesto many-to-many tabele).",
         min_items=1,
         sa_column=Column(
-            type_=postgresql.ARRAY(item_type=Integer),
-            comment="Set ID-jeva članova ekipe (mesto many-to-many tabele).",
+            type_=MutableSet.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
+            nullable=False,
+            server_default=text(text="ARRAY[]::INTEGER[]"),
+            comment="Set ID-jeva članova ekipe (umesto many-to-many tabele).",
         ),
     )
 
@@ -261,18 +283,24 @@ class PoljeMag(SQLModel, table=True):
         default=0.0,
         description="Podešavanje Z-vrednosti.",
         sa_column=Column(
-            type_=Numeric(precision=6, scale=2, asdecimal=False),
+            type_=Numeric(
+                precision=6,
+                scale=2,
+                asdecimal=False,
+            ),
             server_default=text(text="0.0"),
             nullable=False,
             comment="Podešavanje Z-vrednosti.",
         ),
     )
 
-    pogresni_redovi: set[PositiveInt] | None = Field(
+    pogresni_redovi: set[PositiveInt] = Field(
         default_factory=set,
         description="Set pogrešno snimljenih redova.",
         sa_column=Column(
-            type_=postgresql.ARRAY(item_type=Integer),
+            type_=MutableSet.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
+            nullable=False,
+            server_default=text(text="ARRAY[]::INTEGER[]"),
             comment="Set pogrešno snimljenih redova.",
         ),
     )
@@ -282,26 +310,26 @@ class PoljeMag(SQLModel, table=True):
         description="Promena znaka.",
         sa_column=Column(
             type_=Boolean,
-            server_default=text(text="FALSE"),
+            server_default=false(),
+            nullable=False,
             comment="Promena znaka.",
         ),
     )
 
     pov_mag: PositiveFloat | None = Field(
         default=None,
-        description="Površina polja magnetometra (sa uračunatim preklapanjem).",
+        description="Površina polja magnetometra.",
         sa_column=Column(
-            Numeric(precision=10, scale=3, asdecimal=False),
+            Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
             Computed(
-                sqltext=ST_Area(
-                    literal_column(
-                        text="geom",
-                        type_=Geometry,
-                    ),
-                ),
+                sqltext=ST_Area(_geom),
                 persisted=True,
             ),
-            comment="Površina polja magnetometra (sa uračunatim preklapanjem).",
+            comment="Površina polja magnetometra.",
         ),
     )
 
@@ -352,9 +380,9 @@ class PoljeMag(SQLModel, table=True):
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(
-                geometry_type=GeomType.POLYGON,
-                srid=6316,
-                dimension=2,
+                geometry_type=GeomType.POLYGON.value,
+                srid=srid,
+                dimension=default_geom_dim,
                 spatial_index=True,
             ),
             comment="Geometrijska kolona.",
@@ -363,13 +391,14 @@ class PoljeMag(SQLModel, table=True):
 
 
 class PoljeGpr(SQLModel, table=True):
-    """PoljeGPR."""
+    """Tabela polja snimljenih georadarskom metodom."""
 
     model_config: SQLModelConfig = default_model_config
 
     __tablename__: str = "polja_gpr"
     __table_args__: tuple[
         Index,
+        CheckConstraint,
         CheckConstraint,
         CheckConstraint,
         CheckConstraint,
@@ -381,6 +410,7 @@ class PoljeGpr(SQLModel, table=True):
         ck_nule,
         ck_file_name_format_gpr,
         ck_right_angles,
+        ck_all_positive_unique_ekipa_ids,
         {"comment": str(object=__doc__)},
     )
 
@@ -418,13 +448,7 @@ class PoljeGpr(SQLModel, table=True):
             Integer,
             Computed(
                 sqltext=cast(
-                    expression=func.substring(
-                        literal_column(
-                            text="polje_naziv",
-                            type_=String,
-                        ),
-                        (r"\d+"),
-                    ),
+                    expression=_polje_naziv.op(opstring="~")(r"\d+"),
                     type_=Integer,
                 ),
                 persisted=True,
@@ -449,12 +473,14 @@ class PoljeGpr(SQLModel, table=True):
         sa_column_kwargs={"comment": "Početak snimanja."},
     )
 
-    ekipa_ids: set[PositiveInt] | None = Field(
+    ekipa_ids: set[PositiveInt] = Field(
         default_factory=set,
-        description="Set ID-jeva članova ekipe (mesto many-to-many tabele).",
+        description="Set ID-jeva članova ekipe (umesto many-to-many tabele).",
         sa_column=Column(
-            type_=postgresql.ARRAY(item_type=Integer),
-            comment="Set ID-jeva članova ekipe (mesto many-to-many tabele).",
+            type_=MutableSet.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
+            nullable=False,
+            server_default=text(text="ARRAY[]::INTEGER[]"),
+            comment="Set ID-jeva članova ekipe (umesto many-to-many tabele).",
         ),
     )
 
@@ -488,7 +514,7 @@ class PoljeGpr(SQLModel, table=True):
     )
 
     nacin_snimanja: NacinSnimanja = Field(
-        default=NacinSnimanja.KOLICA,
+        default=NacinSnimanja.KOLICA.value,
         description="Način snimanja.",
         sa_column=Column(
             type_=NacinSnimanjaEnum,
@@ -500,16 +526,33 @@ class PoljeGpr(SQLModel, table=True):
         ),
     )
 
+    smer_snimanja: SmerSnimanja = Field(
+        default=SmerSnimanja.DESNO.value,
+        description="Smer snimanja GPR-a.",
+        sa_column=Column(
+            type_=SmerSnimanjaEnum,
+            nullable=False,
+            server_default=text(
+                text=f"'{SmerSnimanja.DESNO.value}'",
+            ),
+            comment="Smer snimanja GPR-a.",
+        ),
+    )
+
     pov_gpr: PositiveFloat | None = Field(
         default=None,
-        description="Površina polja georadara (sa uračunatim preklapanjem).",
+        description="Površina polja georadara.",
         sa_column=Column(
-            Numeric(precision=10, scale=3, asdecimal=False),
+            Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
             Computed(
-                sqltext=ST_Area(literal_column(text="geom", type_=Geometry)),
+                sqltext=ST_Area(_geom),
                 persisted=True,
             ),
-            comment="Površina polja georadara (sa uračunatim preklapanjem).",
+            comment="Površina polja georadara .",
         ),
     )
 
@@ -533,10 +576,10 @@ class PoljeGpr(SQLModel, table=True):
 
     gpr_nula_angle: float | None = Field(
         default=None,
-        description="Ugao nule polja u odnosu na sledeći verteks u obrnutom smeru kazaljke na satu (u radijanima).",  # noqa: E501
+        description="Ugao nule polja u zavisnosti od sera snimanja",
         sa_column=Column(
             type_=Double,
-            comment="Ugao nule polja u odnosu na sledeći verteks u obrnutom smeru kazaljke na satu (u radijanima).",  # noqa: E501
+            comment="Ugao nule polja u zavisnosti od sera snimanja",
         ),
     )
 
@@ -544,9 +587,9 @@ class PoljeGpr(SQLModel, table=True):
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(
-                geometry_type=GeomType.POLYGON,
-                srid=6316,
-                dimension=2,
+                geometry_type=GeomType.POLYGON.value,
+                srid=srid,
+                dimension=default_geom_dim,
                 spatial_index=True,
             ),
             comment="Geometrijska kolona.",
@@ -555,7 +598,7 @@ class PoljeGpr(SQLModel, table=True):
 
 
 class ProfilMag(SQLModel, table=True):
-    """ProfilMag."""
+    """Tabela profila snimljenih geomagnetskom metodom."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "profili_mag"
@@ -614,7 +657,7 @@ class ProfilMag(SQLModel, table=True):
         sa_column_kwargs={"comment": "ID magnetometra."},
     )
 
-    ekipa_id: PositiveInt = Field(
+    ekipa_id: PositiveInt | None = Field(
         description="ID člana ekipe koji je snimio profil.",
         foreign_key="ekipa.ekipa_id",
         index=True,
@@ -640,7 +683,11 @@ class ProfilMag(SQLModel, table=True):
         default=0.0,
         description="Podešavanje Z-vrednosti.",
         sa_column=Column(
-            type_=Numeric(precision=6, scale=2, asdecimal=False),
+            type_=Numeric(
+                precision=6,
+                scale=2,
+                asdecimal=False,
+            ),
             server_default=text(text="0.0"),
             nullable=False,
             comment="Podešavanje Z-vrednosti.",
@@ -652,7 +699,8 @@ class ProfilMag(SQLModel, table=True):
         description="Promena znaka.",
         sa_column=Column(
             type_=Boolean,
-            server_default=text(text="FALSE"),
+            server_default=false(),
+            nullable=False,
             comment="Promena znaka.",
         ),
     )
@@ -664,7 +712,7 @@ class ProfilMag(SQLModel, table=True):
             Integer,
             Computed(
                 sqltext=cast(
-                    expression=ST_Length(literal_column(text="geom", type_=Geometry)),
+                    expression=ST_Length(_geom),
                     type_=Integer,
                 ),
                 persisted=True,
@@ -677,9 +725,9 @@ class ProfilMag(SQLModel, table=True):
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(
-                geometry_type=GeomType.LINESTRING,
-                srid=6316,
-                dimension=2,
+                geometry_type=GeomType.LINESTRING.value,
+                srid=srid,
+                dimension=default_geom_dim,
                 spatial_index=True,
             ),
             comment="Geometrijska kolona.",
@@ -688,7 +736,7 @@ class ProfilMag(SQLModel, table=True):
 
 
 class ProfilGpr(SQLModel, table=True):
-    """ProfilGPR."""
+    """Tabela profila snimljenih georadarskom metodom."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "profili_gpr"
@@ -696,11 +744,13 @@ class ProfilGpr(SQLModel, table=True):
         Index,
         CheckConstraint,
         CheckConstraint,
+        CheckConstraint,
         dict[str, str],
     ] = (
         uq_projekat_profil_concat_gpr,
         ck_profil_naziv_format,
         ck_file_name_format_gpr,
+        ck_all_positive_unique_ekipa_ids,
         {"comment": str(object=__doc__)},
     )
 
@@ -767,17 +817,19 @@ class ProfilGpr(SQLModel, table=True):
         sa_column_kwargs={"comment": "ID antene."},
     )
 
-    ekipa_ids: set[PositiveInt] | None = Field(
+    ekipa_ids: set[PositiveInt] = Field(
         default_factory=set,
         description="Set ID-jeva članova ekipe (mesto many-to-many tabele).",
         sa_column=Column(
-            type_=postgresql.ARRAY(item_type=Integer),
+            type_=MutableSet.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
+            nullable=False,
+            server_default=text(text="ARRAY[]::INTEGER[]"),
             comment="Set ID-jeva članova ekipe (mesto many-to-many tabele).",
         ),
     )
 
     nacin_snimanja: NacinSnimanja = Field(
-        default=NacinSnimanja.KOLICA,
+        default=NacinSnimanja.KOLICA.value,
         description="Način snimanja.",
         sa_column=Column(
             type_=NacinSnimanjaEnum,
@@ -796,7 +848,7 @@ class ProfilGpr(SQLModel, table=True):
             Integer,
             Computed(
                 sqltext=cast(
-                    expression=ST_Length(literal_column(text="geom", type_=Geometry)),
+                    expression=ST_Length(_geom),
                     type_=Integer,
                 ),
                 persisted=True,
@@ -809,9 +861,9 @@ class ProfilGpr(SQLModel, table=True):
         description="Geometrijska kolona.",
         sa_column=Column(
             type_=Geometry(
-                geometry_type=GeomType.LINESTRING,
-                srid=6316,
-                dimension=2,
+                geometry_type=GeomType.LINESTRING.value,
+                srid=srid,
+                dimension=default_geom_dim,
                 spatial_index=True,
             ),
             comment="Geometrijska kolona.",
@@ -819,13 +871,22 @@ class ProfilGpr(SQLModel, table=True):
     )
 
 
-class PoljeElektrika(SQLModel):
-    """PoljeElektrika."""
+class PoljeElektrika(SQLModel, table=True):
+    """Tabela profila snimljenih metodom elektrike."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "polja_elektrika"
-    __table_args__: tuple[CheckConstraint, dict[str, str]] = (
+    __table_args__: tuple[
+        Index,
+        CheckConstraint,
+        CheckConstraint,
+        CheckConstraint,
+        dict[str, str],
+    ] = (
+        uq_projekat_polje_concat_elektrika,
         ck_polje_naziv_format,
+        ck_rectangular_polygon,
+        ck_nule,
         {"comment": str(object=__doc__)},
     )
 
@@ -856,13 +917,7 @@ class PoljeElektrika(SQLModel):
             Integer,
             Computed(
                 sqltext=cast(
-                    expression=func.substring(
-                        literal_column(
-                            text="polje_naziv",
-                            type_=String,
-                        ),
-                        (r"\d+"),
-                    ),
+                    expression=_polje_naziv.op(opstring="~")(r"\d+"),
                     type_=Integer,
                 ),
                 persisted=True,
@@ -902,14 +957,96 @@ class PoljeElektrika(SQLModel):
         sa_column_kwargs={"comment": "Podloga po kojoj je polje snimljeno."},
     )
 
+    pov_elektrika: PositiveFloat | None = Field(
+        default=None,
+        description="Površina polja elektrike.",
+        sa_column=Column(
+            Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            Computed(
+                sqltext=ST_Area(_geom),
+                persisted=True,
+            ),
+            comment="Površina polja elektrike.",
+        ),
+    )
 
-class PoljeProfiler(SQLModel):
-    """PoljeProfiler."""
+    nula_x: PositiveFloat | None = Field(
+        default=None,
+        description="X koordinata nule polja.",
+        sa_column=Column(
+            type_=Double,
+            comment="X koordinata nule polja.",
+        ),
+    )
+
+    nula_y: PositiveFloat | None = Field(
+        default=None,
+        description="Y koordinata nule polja.",
+        sa_column=Column(
+            type_=Double,
+            comment="Y koordinata nule polja.",
+        ),
+    )
+
+    elektrika_nula_angle: float | None = Field(
+        default=None,
+        description="Ugao nule polja (u radijanima).",
+        sa_column=Column(
+            type_=Double,
+            comment="Ugao nule polja (u radijanima).",
+        ),
+    )
+
+    duzina_profila: PositiveInt | None = Field(
+        default=None,
+        description="Dužina profila.",
+        sa_column_kwargs={
+            "comment": "Dužina profila.",
+        },
+    )
+
+    sirina_polja: PositiveInt | None = Field(
+        default=None,
+        description="Širina polja.",
+        sa_column_kwargs={
+            "comment": "Širina polja.",
+        },
+    )
+
+    geom: Geometry = Field(
+        description="Geometrijska kolona.",
+        sa_column=Column(
+            type_=Geometry(
+                geometry_type=GeomType.POLYGON.value,
+                srid=srid,
+                dimension=default_geom_dim,
+                spatial_index=True,
+            ),
+            comment="Geometrijska kolona.",
+        ),
+    )
+
+
+class PoljeProfajler(SQLModel, table=True):
+    """Tabela profila snimljenih profajler metodom."""
 
     model_config: SQLModelConfig = default_model_config
-    __tablename__: str = "polja_profiler"
-    __table_args__: tuple[CheckConstraint, dict[str, str]] = (
+    __tablename__: str = "polja_profajler"
+    __table_args__: tuple[
+        Index,
+        CheckConstraint,
+        CheckConstraint,
+        CheckConstraint,
+        dict[str, str],
+    ] = (
+        uq_projekat_polje_concat_profiler,
         ck_polje_naziv_format,
+        ck_rectangular_polygon,
+        ck_nule,
         {"comment": str(object=__doc__)},
     )
 
@@ -940,18 +1077,24 @@ class PoljeProfiler(SQLModel):
             Integer,
             Computed(
                 sqltext=cast(
-                    expression=func.substring(
-                        literal_column(
-                            text="polje_naziv",
-                            type_=String,
-                        ),
-                        (r"\d+"),
-                    ),
+                    expression=_polje_naziv.op(opstring="~")(r"\d+"),
                     type_=Integer,
                 ),
                 persisted=True,
             ),
             comment="Broj polja; dobijen iz naziva polja.",
+        ),
+    )
+
+    profajler_id: PositiveInt = Field(
+        default=1,
+        description="ID profajlera.",
+        sa_column=Column(
+            Integer,
+            ForeignKey(column="profajleri.profajler_id"),
+            server_default=text(text="1"),
+            index=True,
+            comment="ID profajlera.",
         ),
     )
 
@@ -984,11 +1127,84 @@ class PoljeProfiler(SQLModel):
         description="Podloga po kojoj je polje snimljeno.",
         max_length=255,
         sa_column_kwargs={"comment": "Podloga po kojoj je polje snimljeno."},
+    )
+
+    pov_profajler: PositiveFloat | None = Field(
+        default=None,
+        description="Površina polja profajlera.",
+        sa_column=Column(
+            Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            Computed(
+                sqltext=ST_Area(_geom),
+                persisted=True,
+            ),
+            comment="Površina polja profajlera.",
+        ),
+    )
+
+    nula_x: PositiveFloat | None = Field(
+        default=None,
+        description="X koordinata nule polja.",
+        sa_column=Column(
+            type_=Double,
+            comment="X koordinata nule polja.",
+        ),
+    )
+
+    nula_y: PositiveFloat | None = Field(
+        default=None,
+        description="Y koordinata nule polja.",
+        sa_column=Column(
+            type_=Double,
+            comment="Y koordinata nule polja.",
+        ),
+    )
+
+    profajler_nula_angle: float | None = Field(
+        default=None,
+        description="Ugao nule polja (u radijanima).",
+        sa_column=Column(
+            type_=Double,
+            comment="Ugao nule polja (u radijanima).",
+        ),
+    )
+
+    duzina_profila: PositiveInt | None = Field(
+        default=None,
+        description="Dužina profila.",
+        sa_column_kwargs={
+            "comment": "Dužina profila.",
+        },
+    )
+
+    sirina_polja: PositiveInt | None = Field(
+        default=None,
+        description="Širina polja.",
+        sa_column_kwargs={
+            "comment": "Širina polja.",
+        },
+    )
+
+    geom: Geometry = Field(
+        description="Geometrijska kolona.",
+        sa_column=Column(
+            type_=Geometry(
+                geometry_type=GeomType.POLYGON.value,
+                srid=srid,
+                dimension=default_geom_dim,
+                spatial_index=True,
+            ),
+            comment="Geometrijska kolona.",
+        ),
     )
 
 
 class DsmRaster(SQLModel, table=True):
-    """DsmRaster."""
+    """Tabela DSM rastera."""
 
     model_config: SQLModelConfig = default_model_config
     __tablename__: str = "dsm_rasteri"
