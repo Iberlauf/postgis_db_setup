@@ -7,6 +7,7 @@ default_model_config: SQLModelConfig = {
     "extra": "ignore",
     "from_attributes": True,
     "use_enum_values": True,
+    "populate_by_name": True,
 }
 
 srid: int = 6316

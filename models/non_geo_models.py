@@ -229,53 +229,105 @@ class Projekat(SQLModel, table=True):
 
     pov_mag: NonNegativeFloat | None = Field(
         default=None,
-        description="Ugovorena površina za geomagnetsko snimanje",
+        description="Ugovorena površina za geomagnetsko snimanje.",
         sa_column=Column(
             type_=Numeric(
                 precision=10,
                 scale=3,
                 asdecimal=False,
             ),
-            comment="Ugovorena površina za geomagnetsko snimanje",
+            comment="Ugovorena površina za geomagnetsko snimanje.",
         ),
     )
 
     total_pov_mag: NonNegativeFloat | None = Field(
         default=None,
-        description="Ukupna snimljena površina za geomagnetsko snimanje",
+        description="Ukupna snimljena površina za geomagnetsko snimanje.",
         sa_column=Column(
             type_=Numeric(
                 precision=10,
                 scale=3,
                 asdecimal=False,
             ),
-            comment="Ukupna snimljena površina za geomagnetsko snimanje",
+            comment="Ukupna snimljena površina za geomagnetsko snimanje.",
         ),
     )
 
     pov_gpr: NonNegativeFloat | None = Field(
         default=None,
-        description="Ugovorena površina za georadarsko snimanje",
+        description="Ugovorena površina za georadarsko snimanje.",
         sa_column=Column(
             type_=Numeric(
                 precision=10,
                 scale=3,
                 asdecimal=False,
             ),
-            comment="Ugovorena površina za georadarsko snimanje",
+            comment="Ugovorena površina za georadarsko snimanje.",
         ),
     )
 
     total_pov_gpr: NonNegativeFloat | None = Field(
         default=None,
-        description="Ukupna snimljena površina za georadarsko snimanje",
+        description="Ukupna snimljena površina za georadarsko snimanje.",
         sa_column=Column(
             type_=Numeric(
                 precision=10,
                 scale=3,
                 asdecimal=False,
             ),
-            comment="Ukupna snimljena površina za georadarsko snimanje",
+            comment="Ukupna snimljena površina za georadarsko snimanje.",
+        ),
+    )
+
+    pov_elektrika: NonNegativeFloat | None = Field(
+        default=None,
+        description="Ugovorena površina za snimanje elektrike.",
+        sa_column=Column(
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            comment="Ugovorena površina za snimanje elektrike.",
+        ),
+    )
+
+    total_pov_elektrika: NonNegativeFloat | None = Field(
+        default=None,
+        description="Ukupna snimljena površina za snimanje elektrike.",
+        sa_column=Column(
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            comment="Ukupna snimljena površina za snimanje elektrike.",
+        ),
+    )
+
+    pov_profajler: NonNegativeFloat | None = Field(
+        default=None,
+        description="Ugovorena površina za snimanje profajlerom.",
+        sa_column=Column(
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            comment="Ugovorena površina za snimanje profajlerom.",
+        ),
+    )
+
+    total_pov_profajler: NonNegativeFloat | None = Field(
+        default=None,
+        description="Ukupna snimljena površina za snimanje profajlerom.",
+        sa_column=Column(
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            comment="Ukupna snimljena površina za snimanje profajlerom.",
         ),
     )
 
@@ -293,7 +345,7 @@ class Projekat(SQLModel, table=True):
         sa_column=Column(
             type_=MutableList.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
             nullable=False,
-            server_default=text(text="ARRAY[]::INTEGER[]"),
+            server_default=postgresql.array([], type_=Integer),
             comment="Set lokacija na kojima se izvode radovi.",
         ),
     )
@@ -448,7 +500,7 @@ class Podesavanje(SQLModel, table=True):
         sa_column=Column(
             type_=MutableList.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
             nullable=False,
-            server_default=text(text="ARRAY[]::INTEGER[]"),
+            server_default=postgresql.array([], type_=Integer),
             comment="Lista vrednosti pojačanja za georadar.",
         ),
     )
@@ -729,6 +781,32 @@ class PovrsinaPoDatumu(SQLModel, table=True):
                 asdecimal=False,
             ),
             comment="Dnevna površina snimljena georadarom.",
+        ),
+    )
+
+    pov_elektrika: NonNegativeFloat | None = Field(
+        default=None,
+        description="Dnevna površina snimljena elektrikom.",
+        sa_column=Column(
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            comment="Dnevna površina snimljena elektrikom.",
+        ),
+    )
+
+    pov_profajler: NonNegativeFloat | None = Field(
+        default=None,
+        description="Dnevna površina snimljena profajlerom.",
+        sa_column=Column(
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            comment="Dnevna površina snimljena profajlerom.",
         ),
     )
 

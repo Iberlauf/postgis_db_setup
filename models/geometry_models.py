@@ -6,15 +6,22 @@ from geoalchemy2 import Geometry, Raster
 from geoalchemy2.functions import (
     ST_X,
     ST_Y,
+    ST_Z,
     ST_Area,
     ST_Length,
 )
+from geoalchemy2.shape import from_shape
 from pydantic import (
     NonNegativeFloat,
     NonNegativeInt,
     PositiveFloat,
     PositiveInt,
+    model_validator,
 )
+from pyproj import Transformer
+from shapely.geometry import Polygon, shape
+from shapely.geometry.base import BaseGeometry
+from shapely.ops import transform
 from sqlalchemy import Column, Computed
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.mutable import MutableSet
@@ -28,6 +35,7 @@ from sqlmodel import (
     Integer,
     Numeric,
     SQLModel,
+    UniqueConstraint,
     cast,
     false,
     text,
@@ -53,6 +61,7 @@ from models.constraints import (
     ck_right_angles,
     ck_snimak_broj,
     dsm_rasteri_st_convexhull_idx,
+    uq_parc_ko,
     uq_projekat_polje_concat_elektrika,
     uq_projekat_polje_concat_gpr,
     uq_projekat_polje_concat_mag,
@@ -66,6 +75,12 @@ from models.enums import (
     NacinSnimanjaEnum,
     SmerSnimanja,
     SmerSnimanjaEnum,
+)
+
+TRANSFORMER: Transformer = Transformer.from_crs(
+    crs_from="EPSG:32634",
+    crs_to="EPSG:6316",
+    always_xy=True,
 )
 
 
@@ -151,6 +166,107 @@ class Tacka(SQLModel, table=True):
                 geometry_type=GeomType.POINT.value,
                 srid=srid,
                 dimension=default_geom_dim,
+                spatial_index=True,
+            ),
+            comment="Geometrijska kolona.",
+        ),
+    )
+
+
+class Kotiranje(SQLModel, table=True):
+    """Tabela kotiranja."""
+
+    model_config: SQLModelConfig = default_model_config
+    __tablename__: str = "kotiranja"
+    __table_args__: tuple[dict[str, str]] = ({"comment": str(object=__doc__)},)
+
+    tacka_id: PositiveInt | None = Field(
+        default=None,
+        description="ID tačke.",
+        primary_key=True,
+        sa_column_kwargs={"comment": "ID tačke."},
+    )
+    tacka_naziv: str = Field(
+        description="Naziv tačke.",
+        max_length=255,
+        index=True,
+        sa_column_kwargs={"comment": "Naziv tačke."},
+    )
+    datum: date | None = Field(
+        default=None,
+        description="Datum.",
+        sa_column_kwargs={"comment": "Datum."},
+    )
+
+    x: NonNegativeFloat | None = Field(
+        default=None,
+        description="X koordinata.",
+        sa_column=Column(
+            Computed(
+                sqltext=ST_X(_geom),
+                persisted=True,
+            ),
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            nullable=True,
+            comment="X koordinata.",
+        ),
+    )
+    y: NonNegativeFloat | None = Field(
+        default=None,
+        description="Y koordinata.",
+        sa_column=Column(
+            Computed(
+                sqltext=ST_Y(_geom),
+                persisted=True,
+            ),
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            nullable=True,
+            comment="Y koordinata.",
+        ),
+    )
+
+    z: float | None = Field(
+        default=None,
+        description="Nadmosrska visina.",
+        sa_column=Column(
+            Computed(
+                sqltext=ST_Z(_geom),
+                persisted=True,
+            ),
+            type_=Numeric(
+                precision=10,
+                scale=3,
+                asdecimal=False,
+            ),
+            nullable=True,
+            comment="Nadmosrska visina.",
+        ),
+    )
+
+    projekat_id: PositiveInt | None = Field(
+        default=None,
+        description="ID projekta.",
+        foreign_key="projekti.projekat_id",
+        nullable=True,
+        sa_column_kwargs={"comment": "ID projekta."},
+    )
+
+    geom: Geometry | None = Field(
+        default=None,
+        description="Geometrijska kolona.",
+        sa_column=Column(
+            type_=Geometry(
+                geometry_type=GeomType.POINT.value,
+                srid=srid,
+                dimension=3,
                 spatial_index=True,
             ),
             comment="Geometrijska kolona.",
@@ -259,7 +375,7 @@ class PoljeMag(SQLModel, table=True):
         sa_column=Column(
             type_=MutableSet.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
             nullable=False,
-            server_default=text(text="ARRAY[]::INTEGER[]"),
+            server_default=postgresql.array([], type_=Integer),
             comment="Set ID-jeva članova ekipe (umesto many-to-many tabele).",
         ),
     )
@@ -300,7 +416,7 @@ class PoljeMag(SQLModel, table=True):
         sa_column=Column(
             type_=MutableSet.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
             nullable=False,
-            server_default=text(text="ARRAY[]::INTEGER[]"),
+            server_default=postgresql.array([], type_=Integer),
             comment="Set pogrešno snimljenih redova.",
         ),
     )
@@ -479,7 +595,7 @@ class PoljeGpr(SQLModel, table=True):
         sa_column=Column(
             type_=MutableSet.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
             nullable=False,
-            server_default=text(text="ARRAY[]::INTEGER[]"),
+            server_default=postgresql.array([], type_=Integer),
             comment="Set ID-jeva članova ekipe (umesto many-to-many tabele).",
         ),
     )
@@ -823,7 +939,7 @@ class ProfilGpr(SQLModel, table=True):
         sa_column=Column(
             type_=MutableSet.as_mutable(sqltype=postgresql.ARRAY(item_type=Integer)),
             nullable=False,
-            server_default=text(text="ARRAY[]::INTEGER[]"),
+            server_default=postgresql.array([], type_=Integer),
             comment="Set ID-jeva članova ekipe (mesto many-to-many tabele).",
         ),
     )
@@ -1234,3 +1350,81 @@ class DsmRaster(SQLModel, table=True):
             comment="Raster.",
         ),
     )
+
+
+class Parcela(SQLModel, table=True):
+    """Parcela model."""
+
+    model_config: SQLModelConfig = default_model_config
+    __table_args__: tuple[
+        UniqueConstraint,
+        dict[str, str],
+    ] = (
+        uq_parc_ko,
+        {"comment": str(object=__doc__)},
+    )
+
+    parc_id: PositiveInt | None = Field(
+        default=None,
+        description="ID rastera.",
+        primary_key=True,
+        sa_column_kwargs={"comment": "ID rastera."},
+    )
+    parc_br: str = Field(
+        description="Broj parcele.",
+        alias="brparcele",
+        sa_column_kwargs={"comment": "Broj parcele."},
+    )
+    parc_status: str = Field(
+        description="Opis statusa parcele.",
+        alias="status_parcele_opis",
+        sa_column_kwargs={"comment": "Opis statusa parcele."},
+    )
+    parc_ko: str = Field(
+        description="Ime katastarske opštine.",
+        alias="kat_opstina_ime",
+        sa_column_kwargs={"comment": "Ime katastarske opštine."},
+    )
+    parc_ops: str = Field(
+        description="Ime opštine.",
+        alias="opstina_ime",
+        sa_column_kwargs={"comment": "Ime opštine."},
+    )
+    geometrija: Geometry = Field(
+        sa_column=Column(
+            type_=Geometry(
+                geometry_type=GeomType.POLYGON.value,
+                srid=6316,
+                dimension=2,
+                spatial_index=True,
+            ),
+            comment="Geometrija parcele.",
+        ),
+    )
+
+    @model_validator(mode="before")
+    @classmethod
+    def process_geometry(cls, data: dict) -> dict:
+        """Reproject geometry from EPSG:32634 to EPSG:6316 and convert to WKBElement.
+
+        Args:
+            data (dict): Raw input data containing a GeoJSON geometry dict.
+
+        Returns:
+            dict: Data with geometry converted to a WKBElement ready for PostGIS.
+
+        Raises:
+            ValueError: If the geometry is not a Polygon.
+
+        """
+        if "geometrija" in data and isinstance(data["geometrija"], dict):
+            shapely_geom: BaseGeometry = shape(context=data["geometrija"])
+            if not isinstance(shapely_geom, Polygon):
+                msg: str = f"Expected Polygon, got {type(shapely_geom).__name__}"
+                raise ValueError(msg)
+            reprojected: Polygon = transform(
+                func=TRANSFORMER.transform,
+                geom=shapely_geom,
+            )
+            data["geometrija"] = from_shape(shape=reprojected, srid=6316)
+        return data

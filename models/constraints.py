@@ -121,6 +121,14 @@ _dubina_gain: ColumnClause[dict[str, str]] = literal_column(
     text="dubina_gain",
     type_=postgresql.HSTORE,
 )
+_parc_br: ColumnClause[str] = literal_column(
+    text="parc_br",
+    type_=String(length=50),
+)
+_parc_ko: ColumnClause[str] = literal_column(
+    text="parc_k",
+    type_=String(length=255),
+)
 
 # Indexes
 
@@ -199,6 +207,12 @@ uq_projekat_datum: UniqueConstraint = UniqueConstraint(
     name="uq_projekat_datum",
 )
 
+uq_parc_ko: UniqueConstraint = UniqueConstraint(
+    _parc_br,
+    _parc_ko,
+    name="uq_parc_br_parc_ko",
+)
+
 # CheckConstraints
 
 
@@ -252,17 +266,21 @@ ck_all_positive_unique_lokacije_ids: CheckConstraint = (
 )
 
 ck_polje_naziv_format: CheckConstraint = CheckConstraint(
-    sqltext=_polje_naziv.op(opstring="~")(r"^Polje \d+$|^\d+[a-z]+$"),
+    sqltext=_polje_naziv.op(opstring="~")(
+        literal(value=r"^Polje \d+$|^\d+[a-z]+$", type_=String),
+    ),
     name="ck_polje_naziv_format",
 )
 
 ck_profil_naziv_format: CheckConstraint = CheckConstraint(
-    sqltext=_profil_naziv.op(opstring="~")(r"^Profil \d+$"),
+    sqltext=_profil_naziv.op(opstring="~")(
+        literal(value=r"^Profil \d+$", type_=String),
+    ),
     name="ck_profil_naziv_format",
 )
 
 ck_file_name_format_gpr: CheckConstraint = CheckConstraint(
-    sqltext=_file_name.op(opstring="~")(r"^[^a-z]*$"),
+    sqltext=_file_name.op(opstring="~")(literal(value=r"^[^a-z]*$", type_=String)),
     name="ck_file_name_format_gpr",
 )
 
@@ -294,12 +312,16 @@ ck_antena_frekvencija_positive: CheckConstraint = CheckConstraint(
 )
 
 ck_pib_format: CheckConstraint = CheckConstraint(
-    sqltext=_investitor_pib.op(opstring="~")(r"^[0-9]{9}$"),
+    sqltext=_investitor_pib.op(opstring="~")(
+        literal(value=r"^[0-9]{9}$", type_=String),
+    ),
     name="ck_pib_format",
 )
 
 ck_mb_format: CheckConstraint = CheckConstraint(
-    sqltext=_investitor_maticni_broj.op(opstring="~")(r"^[0-9]{8}$"),
+    sqltext=_investitor_maticni_broj.op(opstring="~")(
+        literal(value=r"^[0-9]{8}$", type_=String),
+    ),
     name="ck_mb_format",
 )
 

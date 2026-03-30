@@ -6,6 +6,7 @@ from sqlalchemy.sql.schema import Table
 from sqlmodel import SQLModel
 
 from config import settings
+from defaults import srid
 
 enable_out_db: TextClause = text(
     text=f"""--sql
@@ -256,35 +257,6 @@ EXECUTE FUNCTION update_project_profajler_area();
 """,
 )
 
-
-# create_trigger_function_all_unique: DDL = DDL(
-#     statement="""--sql
-# DROP TRIGGER IF EXISTS trg_check_pogresni_redovi_unique ON polja_mag;
-# DROP FUNCTION IF EXISTS check_pogresni_redovi_unique() CASCADE;
-# CREATE OR REPLACE FUNCTION check_pogresni_redovi_unique()
-# RETURNS TRIGGER AS $$
-# BEGIN
-#     IF NEW.pogresni_redovi IS NOT NULL THEN
-#         IF array_length(NEW.pogresni_redovi, 1) !=
-#            (SELECT COUNT(DISTINCT val) FROM unnest(NEW.pogresni_redovi) AS val) THEN
-#             RAISE EXCEPTION 'Kolona pogresni_redovi mora sadržati samo jedinstvene unose';  # noqa: E501
-#         END IF;
-#     END IF;
-#     RETURN NEW;
-# END;
-# $$ LANGUAGE plpgsql;
-# """,
-# )
-
-# create_trigger_all_unique: DDL = DDL(
-#     statement="""--sql
-# CREATE TRIGGER trg_check_pogresni_redovi_unique
-# BEFORE INSERT OR UPDATE ON polja_mag
-# FOR EACH ROW
-# EXECUTE FUNCTION check_pogresni_redovi_unique();
-# """,
-# )
-
 trigger_check_proizvodjac: DDL = DDL(
     statement="""--sql
 DROP TRIGGER IF EXISTS trigger_check_gpr_antena_proizvodjac ON polja_gpr;
@@ -401,6 +373,8 @@ DECLARE
     v_old_datum   DATE := NULL;
     v_area_mag    NUMERIC;
     v_area_gpr    NUMERIC;
+    v_area_elektrika    NUMERIC;
+    v_area_profajler    NUMERIC;
 BEGIN
     IF (TG_OP = 'INSERT' OR TG_OP = 'UPDATE') THEN
         v_projekat_id := NEW.projekat_id;
@@ -415,7 +389,9 @@ BEGIN
             UPDATE povrsine_po_datumu ppd
             SET
                 pov_mag = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_mag'),
-                pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr')
+                pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr'),
+                pov_elektrika = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_elektrika'),
+                pov_profajler = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_profajler')
             WHERE ppd.projekat_id = v_projekat_id
             AND ppd.datum >= v_old_datum;
             RETURN NEW;
@@ -426,23 +402,31 @@ BEGIN
     END IF;
     v_area_mag := calculate_non_overlapping_area(v_projekat_id, v_datum, 'polja_mag');
     v_area_gpr := calculate_non_overlapping_area(v_projekat_id, v_datum, 'polja_gpr');
-    INSERT INTO povrsine_po_datumu (projekat_id, datum, pov_mag, pov_gpr)
-    VALUES (v_projekat_id, v_datum, v_area_mag, v_area_gpr)
+    v_area_elektrika := calculate_non_overlapping_area(v_projekat_id, v_datum, 'polja_elektrika');
+    v_area_profajler := calculate_non_overlapping_area(v_projekat_id, v_datum, 'polja_profajler');
+    INSERT INTO povrsine_po_datumu (projekat_id, datum, pov_mag, pov_gpr, pov_elektrika, pov_profajler)
+    VALUES (v_projekat_id, v_datum, v_area_mag, v_area_gpr, v_area_elektrika, v_area_profajler)
     ON CONFLICT (projekat_id, datum)
     DO UPDATE SET
         pov_mag = EXCLUDED.pov_mag,
-        pov_gpr = EXCLUDED.pov_gpr;
+        pov_gpr = EXCLUDED.pov_gpr,
+        pov_elektrika = EXCLUDED.pov_elektrika,
+        pov_profajler = EXCLUDED.pov_profajler;
     UPDATE povrsine_po_datumu ppd
     SET
         pov_mag = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_mag'),
-        pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr')
+        pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr'),
+        pov_elektrika = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_elektrika'),
+        pov_profajler = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_profajler')
     WHERE ppd.projekat_id = v_projekat_id
     AND ppd.datum > v_datum;
     IF (TG_OP = 'UPDATE' AND v_old_datum IS NOT NULL AND v_old_datum <> v_datum) THEN
         UPDATE povrsine_po_datumu ppd
         SET
             pov_mag = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_mag'),
-            pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr')
+            pov_gpr = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_gpr'),
+            pov_elektrika = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_elektrika'),
+            pov_profajler = calculate_non_overlapping_area(ppd.projekat_id, ppd.datum, 'polja_profajler')
         WHERE ppd.projekat_id = v_projekat_id
         AND ppd.datum >= v_old_datum
         AND ppd.datum <= v_datum;
@@ -482,7 +466,6 @@ CREATE TRIGGER trg_polja_gpr_update_povrsine
     EXECUTE FUNCTION update_povrsine_po_datumu();
 """,
 )
-
 
 drop_trigger_polja_elektrika: DDL = DDL(
     statement="""--sql
@@ -843,6 +826,30 @@ EXECUTE FUNCTION create_podesavanja_for_projekat();
 )
 
 
+create_set_geom_from_xy_function: DDL = DDL(
+    statement=f"""--sql
+    CREATE OR REPLACE FUNCTION set_geom_from_xy()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        IF NEW.geom IS NULL AND NEW.x IS NOT NULL AND NEW.y IS NOT NULL THEN
+            NEW.geom := ST_SetSRID(ST_MakePoint(NEW.x, NEW.y, COALESCE(NEW.z, 0)), {srid});
+        END IF;
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+""",  # noqa: E501
+)
+
+create_set_geom_from_xy_trigger: DDL = DDL(
+    statement="""--sql
+    DROP TRIGGER IF EXISTS trg_kotiranja_set_geom ON kotiranja;
+    CREATE TRIGGER trg_kotiranja_set_geom
+    BEFORE INSERT ON kotiranja
+    FOR EACH ROW EXECUTE FUNCTION set_geom_from_xy();
+""",
+)
+
+
 def register_triggers() -> None:
     """Register all database triggers."""
     tacke_table: Table = SQLModel.metadata.tables["tacke"]
@@ -854,6 +861,7 @@ def register_triggers() -> None:
     ekipa_table: Table = SQLModel.metadata.tables["ekipa"]
     lokacije: Table = SQLModel.metadata.tables["lokacije"]
     podesavanja: Table = SQLModel.metadata.tables["podesavanja"]
+    kotiranja: Table = SQLModel.metadata.tables["kotiranja"]
 
     trigger_config: dict[Table, list[DDL]] = {
         ekipa_table: [restrict_ekipa_delete],
@@ -862,8 +870,6 @@ def register_triggers() -> None:
             create_z_trigger,
         ],
         polja_mag_table: [
-            # create_trigger_function_all_unique,
-            # create_trigger_all_unique,
             create_total_mag_trigger_function,
             create_total_mag_trigger,
             create_calculate_mag_nula_xy_coordinates_function,
@@ -906,6 +912,10 @@ def register_triggers() -> None:
         ],
         podesavanja: [
             create_new_podesavanje_trigger,
+        ],
+        kotiranja: [
+            create_set_geom_from_xy_function,
+            create_set_geom_from_xy_trigger,
         ],
     }
 

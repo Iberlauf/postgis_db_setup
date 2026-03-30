@@ -1,6 +1,7 @@
 """Init."""
 
-from typing import TYPE_CHECKING, TypeVar
+from collections.abc import Generator
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import Session, SQLModel
@@ -13,8 +14,10 @@ from mandatory_default_values import (
 from models.enums import NacinSnimanjaEnum
 from models.geometry_models import (
     DsmRaster,
+    PoljeElektrika,
     PoljeGpr,
     PoljeMag,
+    PoljeProfajler,
     ProfilGpr,
     ProfilMag,
     Tacka,
@@ -47,6 +50,8 @@ from testing_default_values import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
+
     from sqlalchemy import Engine
     from sqlalchemy.dialects.postgresql.dml import Insert
     from sqlalchemy.sql.schema import Table
@@ -64,6 +69,20 @@ insert_epsg_3855: Insert = (
     .values(epsg_3855)
     .on_conflict_do_nothing(index_elements=["srid"])
 )
+
+
+def yield_session(engine: Engine) -> Generator[Session, Any]:
+    """Get session.
+
+    Args:
+        engine (Engine): Engine.
+
+    Yields:
+        Generator[Session, Any]: A new session.
+
+    """
+    with Session(bind=engine) as session:
+        yield session
 
 
 def create_instances[T: SQLModel](
@@ -128,8 +147,8 @@ def populate_defaults(engine: Engine) -> None:
         (Projekat, projekat_defaults),
         (Lokacija, lokacije_defaults),
     ]
-
-    with Session(bind=engine) as session:
+    session: Generator[Session, Any] = yield_session(engine=engine)
+    if isinstance(session, Session):
         for model_class, defaults in defaults_mapping:
             instances: list = create_instances(
                 model_class=model_class,
@@ -154,8 +173,10 @@ __all__: list[str] = [
     "NacinSnimanjaEnum",
     "Nula",
     "Podesavanje",
+    "PoljeElektrika",
     "PoljeGpr",
     "PoljeMag",
+    "PoljeProfajler",
     "PovrsinaPoDatumu",
     "ProfilGpr",
     "ProfilMag",
