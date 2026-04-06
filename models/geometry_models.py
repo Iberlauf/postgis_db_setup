@@ -35,9 +35,12 @@ from sqlmodel import (
     Integer,
     Numeric,
     SQLModel,
+    String,
     UniqueConstraint,
     cast,
     false,
+    func,
+    literal_column,
     text,
 )
 from sqlmodel._compat import SQLModelConfig
@@ -1352,53 +1355,106 @@ class DsmRaster(SQLModel, table=True):
     )
 
 
-class Parcela(SQLModel, table=True):
+class Parcela(SQLModel):
     """Parcela model."""
 
-    model_config: SQLModelConfig = default_model_config
-    __table_args__: tuple[
-        UniqueConstraint,
-        dict[str, str],
-    ] = (
-        uq_parc_ko,
+    __table_args__: tuple[UniqueConstraint, dict[str, str]] = (
+        UniqueConstraint(
+            "parc_br",
+            "parc_ko",
+            name="uq_parc_br_parc_ko",
+        ),
         {"comment": str(object=__doc__)},
     )
 
+    model_config: SQLModelConfig = {
+        "arbitrary_types_allowed": True,
+        "extra": "ignore",
+        "from_attributes": True,
+        "use_enum_values": True,
+        "populate_by_name": True,
+    }
+
     parc_id: PositiveInt | None = Field(
         default=None,
-        description="ID rastera.",
         primary_key=True,
-        sa_column_kwargs={"comment": "ID rastera."},
     )
     parc_br: str = Field(
         description="Broj parcele.",
         alias="brparcele",
-        sa_column_kwargs={"comment": "Broj parcele."},
+        max_length=255,
     )
     parc_status: str = Field(
         description="Opis statusa parcele.",
         alias="status_parcele_opis",
-        sa_column_kwargs={"comment": "Opis statusa parcele."},
+        max_length=255,
     )
     parc_ko: str = Field(
         description="Ime katastarske opštine.",
         alias="kat_opstina_ime",
-        sa_column_kwargs={"comment": "Ime katastarske opštine."},
+        max_length=255,
     )
     parc_ops: str = Field(
         description="Ime opštine.",
         alias="opstina_ime",
-        sa_column_kwargs={"comment": "Ime opštine."},
+        max_length=255,
+    )
+    brparcele_int: int | None = Field(
+        default=None,
+        description="Broj parcele kao integer, izvučen iz stringa brparcele.",
+        sa_column=Column(
+            Integer,
+            Computed(
+                sqltext=cast(
+                    expression=func.split_part(
+                        literal_column(
+                            text="brparcele",
+                            type_=String(length=255),
+                        ),
+                        "/",
+                        1,
+                    ),
+                    type_=Integer,
+                ),
+            ),
+        ),
+    )
+    obim_udela: int | None = Field(
+        default=None,
+        description="Obim udela, izvučen iz stringa brparcele.",
+        sa_column=Column(
+            Integer,
+            Computed(
+                sqltext=cast(
+                    expression=func.coalesce(
+                        func.nullif(
+                            func.split_part(
+                                literal_column(
+                                    text="brparcele",
+                                    type_=String(length=255),
+                                ),
+                                "/",
+                                2,
+                            ),
+                            "",
+                        ),
+                        "1",
+                    ),
+                    type_=Integer,
+                ),
+            ),
+        ),
     )
     geometrija: Geometry = Field(
+        description="Geometrija parcele kao POLYGON u EPSG:6316.",
         sa_column=Column(
             type_=Geometry(
-                geometry_type=GeomType.POLYGON.value,
+                geometry_type="POLYGON",
                 srid=6316,
                 dimension=2,
                 spatial_index=True,
             ),
-            comment="Geometrija parcele.",
+            comment="Geometrija parcele kao POLYGON u EPSG:6316.",
         ),
     )
 
