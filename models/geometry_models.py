@@ -1359,11 +1359,7 @@ class Parcela(SQLModel):
     """Parcela model."""
 
     __table_args__: tuple[UniqueConstraint, dict[str, str]] = (
-        UniqueConstraint(
-            "parc_br",
-            "parc_ko",
-            name="uq_parc_br_parc_ko",
-        ),
+        uq_parc_ko,
         {"comment": str(object=__doc__)},
     )
 
